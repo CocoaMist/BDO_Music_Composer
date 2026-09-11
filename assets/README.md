@@ -6,6 +6,13 @@ The files below belong to this application. None came from Black Desert Online
 or another game archive. Provenance is listed per file; do not guess missing
 details.
 
+## Current icon and moonlit home artwork
+
+The 2026-09-09 refresh uses `icons/app_icon.png`, its multi-size Windows
+`icons/app_icon.ico`, and `ui/home/home_moonlit_atelier_v3.png`.
+The previous salon image below is retained as an unused reference.
+See [generation provenance and exact prompts](ARTWORK_REFRESH_20260909.md).
+
 ## `ui/home/home_aristocratic_salon_v2.png`
 
 - Generated on 2026-08-01 with the built-in OpenAI ImageGen tool in

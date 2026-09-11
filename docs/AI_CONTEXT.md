@@ -71,7 +71,7 @@ the canonical path directly, with no root compatibility shim.
 | Timeline track meters | `AudioStatus.track_levels`, `TimelineCanvas.set_track_levels` | `src/bdo_music_composer/audio/bdo_realtime_audio.py`, `src/bdo_music_composer/ui/main_window.py` |
 | Sample selection/instrument ranges | canonical bank routing, renderer and mapping | `src/bdo_music_composer/audio/bdo_instrument_samples.py`, `src/bdo_music_composer/audio/bdo_sample_renderer.py` |
 | BDO v9 codec/binary format | `docs/BDO_V9_CODEC.md`, codec tests | `src/bdo_codec/` |
-| MIDI import / mappings | parser tests plus the transactional editor-import contract | `src/bdo_midi/`, `src/bdo_music_composer/editor/editor_import.py`, thin apply adapter in `src/bdo_music_composer/ui/main_window.py` |
+| MIDI import / mappings | strict parser tests, bounded compatibility-repair negatives, original-file preservation, non-`/4` import/export separation, and the transactional editor-import contract | `src/bdo_midi/compatibility.py`, `src/bdo_midi/`, `src/bdo_music_composer/editor/editor_import.py`, thin apply adapter in `src/bdo_music_composer/ui/main_window.py` |
 | MIDI/editor-to-BDO adaptation | immutable export snapshot, source-document reuse, final-document summary, staged atomic publication | `src/bdo_music_composer/export/export_workflow.py`, `src/bdo_common/atomic_io.py`, `src/bdo_export/core.py`, `src/bdo_export/source_reuse.py` |
 | Export consistency/debug mismatch | editor projection versus prepared/primary/game-copy fields, canonical 730 layout, lossless source bytes, redacted report | `src/bdo_music_composer/export/export_verification.py`, integration in `src/bdo_music_composer/export/export_workflow.py`, `tests/test_export_verification.py` |
 | Formal game-score scope, velocity materialization, shared instrument mixer | game-model unit tests plus UI/export round trips | `src/bdo_music_composer/editor/game_score_model.py`, thin UI adapters |
@@ -382,8 +382,12 @@ new production code imports the owner directly. See
   local opacity means candidate/span audio evidence. Keep the user Pitch Line
   opacity as an independent master multiplier and never present a prediction as
   verified source identity.
-- Keep `gm_to_bdo_instrument` as the single GM→BDO domain mapping entry point.
-  UI and match presentation must not introduce another mapping table.
+- Keep `plan_gm_to_bdo_instrument` as the single GM→BDO domain planning entry
+  point; `gm_to_bdo_instrument` is its compatibility projection. UI and match
+  presentation must not introduce another mapping table. Preserve Bank Select,
+  track/instrument names, dialect, drum-kit program, chosen candidate, and
+  alternatives in the imported track's `midi_source` metadata. Do not translate
+  raw source names or treat imported controls as verified BDO articulations.
 - Schema v10 stores transcription-review payload v4, including
   `cleanup_profile`, plus manual assist review. New state defaults to
   `preserve`; schemas v1–v7 and review payloads v1–v3 also migrate to
@@ -476,7 +480,10 @@ new production code imports the owner directly. See
   `UpdateCheckController`; it remains an internal release-notes test surface.
 - The production self-updater may auto-download only after exact signed-manifest
   verification. Keep its host allow-list, bounded reads, highest-version
-  rollback guard, hash/size checks, canonical target filename, next-launch
+  rollback guard, hash/size checks, strict Range/Content-Range resume,
+  cross-mirror partial handoff, download/install disk reserve, schema-validated
+  ready-record protection, non-link seven-day orphan cleanup, canonical target
+  filename, one-hour failure retry, next-launch
   handoff, `.old` recovery, and real-GUI health acknowledgement fail-closed.
   Never log or transmit Owner IDs, project data, or local paths.
 

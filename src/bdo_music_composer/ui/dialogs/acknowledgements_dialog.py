@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QPushButton,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -166,6 +168,21 @@ class AcknowledgementsDialog(QDialog):
         text_title.setProperty("uiRole", "sectionTitle")
         text_layout.addWidget(text_title)
 
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+        self.search_edit = QLineEdit()
+        self.search_edit.setObjectName("ThanksSearch")
+        self.search_edit.setPlaceholderText(tr("搜索致谢与许可证"))
+        self.search_edit.setAccessibleName(tr("搜索致谢与许可证"))
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.returnPressed.connect(self._find_next)
+        search_row.addWidget(self.search_edit, stretch=1)
+        find_button = QPushButton(tr("查找下一个"))
+        find_button.setObjectName("ThanksFindNext")
+        find_button.clicked.connect(self._find_next)
+        search_row.addWidget(find_button)
+        text_layout.addLayout(search_row)
+
         self.credits_browser = QTextBrowser()
         self.credits_browser.setObjectName("ThanksText")
         self.credits_browser.setReadOnly(True)
@@ -201,6 +218,16 @@ class AcknowledgementsDialog(QDialog):
         QApplication.clipboard().setText(
             self.credits_browser.toPlainText().strip()
         )
+
+    def _find_next(self) -> None:
+        query = self.search_edit.text().strip()
+        if not query:
+            return
+        if not self.credits_browser.find(query):
+            cursor = self.credits_browser.textCursor()
+            cursor.movePosition(cursor.MoveOperation.Start)
+            self.credits_browser.setTextCursor(cursor)
+            self.credits_browser.find(query)
 
 
 __all__ = ["AcknowledgementsDialog", "THIRD_PARTY_NOTICES_URL"]

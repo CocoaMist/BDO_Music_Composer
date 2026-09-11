@@ -418,6 +418,8 @@ class MidiOptimizeDialog(QDialog):
         self.report_text.setObjectName("OptimizerReport")
         details.addWidget(self.report_text, stretch=1)
         layout.addWidget(self.details_container)
+        self.open_plugins_button.setVisible(False)
+        self.refresh_plugins_button.setVisible(False)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
         self.button_box = buttons
@@ -674,6 +676,8 @@ class MidiOptimizeDialog(QDialog):
 
     def _toggle_details(self, visible: bool) -> None:
         self.details_container.setVisible(visible)
+        self.open_plugins_button.setVisible(visible)
+        self.refresh_plugins_button.setVisible(visible)
         self.details_button.setText(
             tr("详细信息 ▾" if visible else "详细信息 ▸")
         )

@@ -247,6 +247,13 @@ class MainWindowStyleMixin:
             QLabel#SettingsFieldLabel { color: #c7c0b8; }
             QLabel#OwnerStatus { color: #bdb6ad; }
             QLabel#OwnerStatus[ownerError="true"] { color: #e06c62; }
+            QLabel#SettingsUpdateStatus {
+                color: #cdbb96;
+                background: #1d1b18;
+                border: 1px solid #4a3b27;
+                border-radius: 6px;
+                padding: 9px 11px;
+            }
             QFrame#SettingsModeRow {
                 background: #1a1a1a;
                 border: 0;
@@ -1519,6 +1526,19 @@ class MainWindowStyleMixin:
             }
             QLabel#ToolbarText { color: #c7c0b8; }
             QLabel#Muted { color: #a8a29e; }
+            QFrame#SelfUpdateStatusCard {
+                background: #1d1b18;
+                border: 1px solid #4a3b27;
+                border-radius: 6px;
+            }
+            QLabel#SelfUpdateStatusBadge {
+                color: #17130d;
+                background: #d8ad59;
+                border-radius: 9px;
+                padding: 3px 8px;
+                font-weight: 900;
+            }
+            QLabel#SelfUpdateStatusSummary { color: #d8d1c5; }
             QFrame#ThanksTextPanel {
                 background: #151515;
                 border: 0;

@@ -37,7 +37,15 @@ class TrackRefreshEfficiencyTests(unittest.TestCase):
             with patch.object(window.timeline, "set_tracks", side_effect=counted), patch.object(
                 editor_import,
                 "parse_midi",
-                return_value=(120, 4, [([note], 0, False)], 1, [[]], []),
+                return_value=(
+                    120,
+                    4,
+                    [([note], 0, False)],
+                    1,
+                    [[]],
+                    [],
+                    [editor_import.MidiGroupEvidence(0, 0)],
+                ),
             ), patch.object(
                 editor_import,
                 "read_midi_time_signature_denominator",

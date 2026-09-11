@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -259,6 +261,14 @@ class EditorShortcutHelpDialog(QDialog):
         scope_note.setWordWrap(True)
         root.addWidget(scope_note)
 
+        self.search_edit = QLineEdit()
+        self.search_edit.setObjectName("ShortcutHelpSearch")
+        self.search_edit.setPlaceholderText(tr("搜索快捷键或操作"))
+        self.search_edit.setAccessibleName(tr("搜索快捷键或操作"))
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.textChanged.connect(self._filter_shortcuts)
+        root.addWidget(self.search_edit)
+
         scroll = QScrollArea()
         scroll.setObjectName("ShortcutHelpScroll")
         scroll.setWidgetResizable(True)
@@ -268,6 +278,9 @@ class EditorShortcutHelpDialog(QDialog):
         content_layout.setContentsMargins(2, 2, 8, 2)
         content_layout.setSpacing(10)
         self.shortcut_rows: list[tuple[QLabel, QLabel]] = []
+        self.shortcut_groups: list[
+            tuple[QFrame, QLabel, list[tuple[QLabel, QLabel]]]
+        ] = []
 
         entries = (*EDITOR_SHORTCUT_SPECS, *EDITOR_GESTURE_SPECS)
         for group_source in HELP_GROUP_SOURCES:
@@ -281,6 +294,7 @@ class EditorShortcutHelpDialog(QDialog):
             heading.setObjectName("ShortcutHelpGroupTitle")
             grid.addWidget(heading, 0, 0, 1, 2)
             row = 1
+            group_rows: list[tuple[QLabel, QLabel]] = []
             for entry in entries:
                 if entry.group_source != group_source:
                     continue
@@ -301,7 +315,9 @@ class EditorShortcutHelpDialog(QDialog):
                 grid.addWidget(key_label, row, 0)
                 grid.addWidget(action_label, row, 1)
                 self.shortcut_rows.append((key_label, action_label))
+                group_rows.append((key_label, action_label))
                 row += 1
+            self.shortcut_groups.append((group, heading, group_rows))
             content_layout.addWidget(group)
         content_layout.addStretch(1)
         scroll.setWidget(content)
@@ -311,3 +327,23 @@ class EditorShortcutHelpDialog(QDialog):
         close_button.setObjectName("ShortcutHelpClose")
         close_button.clicked.connect(self.close)
         root.addWidget(close_button, 0, Qt.AlignRight)
+
+    def _filter_shortcuts(self, query: str) -> None:
+        needle = str(query).strip().casefold()
+        for group, heading, rows in self.shortcut_groups:
+            group_match = bool(needle) and needle in heading.text().casefold()
+            visible_count = 0
+            for key_label, action_label in rows:
+                row_text = f"{key_label.text()} {action_label.text()}".casefold()
+                visible = not needle or group_match or needle in row_text
+                key_label.setVisible(visible)
+                action_label.setVisible(visible)
+                visible_count += int(visible)
+            group.setVisible(visible_count > 0)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key_Escape:
+            self.reject()
+            event.accept()
+            return
+        super().keyPressEvent(event)

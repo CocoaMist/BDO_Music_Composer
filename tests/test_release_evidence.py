@@ -4,16 +4,37 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from bdo_music_composer.app.release_evidence import (
     InstalledPackage,
     build_spdx_document,
+    installed_packages,
     sha256_file,
     write_release_evidence,
 )
 
 
 class ReleaseEvidenceTests(unittest.TestCase):
+    def test_installed_packages_excludes_the_application_distribution(self) -> None:
+        class Distribution:
+            def __init__(self, name: str, version: str) -> None:
+                self.metadata = {"Name": name, "License-Expression": "MIT"}
+                self.version = version
+
+        distributions = (
+            Distribution("bdo_music_composer", "1.2.0.2"),
+            Distribution("Example-Dependency", "3.0"),
+        )
+        with patch(
+            "bdo_music_composer.app.release_evidence.importlib.metadata.distributions",
+            return_value=distributions,
+        ):
+            self.assertEqual(
+                installed_packages(),
+                (InstalledPackage("Example-Dependency", "3.0", "MIT"),),
+            )
+
     def test_spdx_is_deterministic_and_contains_artifact_digest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory) / "app.exe"

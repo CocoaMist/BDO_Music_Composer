@@ -25,6 +25,50 @@ def _run_offscreen(source: str) -> subprocess.CompletedProcess[str]:
 
 
 class InstrumentEditorUiTests(unittest.TestCase):
+    def test_empty_manual_roll_marks_game_limits_without_rewriting_notes(self) -> None:
+        completed = _run_offscreen(
+            """
+            from PySide6.QtWidgets import QApplication
+            from bdo_music_composer.ui.main_window import (
+                MidiNoteEditorDialog, MidiToBdoWindow, Note, TrackState,
+            )
+            app = QApplication([])
+            window = MidiToBdoWindow()
+            track = TrackState(1, [Note(89, 90, 0, 240, 0)], 0, False, "Flute", 0x0B)
+            window.tracks = [track]
+            editor = MidiNoteEditorDialog(window, track, 120, 4)
+            editor.resize(1000, 700)
+            editor.show()
+            app.processEvents()
+            canvas = editor.canvas
+            assert not canvas.transcription_candidates_visible
+            canvas.pitch_top = 91
+            before = tuple(canvas.notes)
+            normal = canvas.grab().toImage()
+            # Same pitch/geometry becomes legal after a declared octave down.
+            editor.transpose = -12
+            editor._invalid_pitch_cache.clear()
+            shifted = canvas.grab().toImage()
+            x = canvas.KEY_W - 2
+            y = round(canvas.RULER_H + (91 - 89 + .5) * canvas.ROW_H)
+            assert normal.pixelColor(x, y) != shifted.pixelColor(x, y)
+            editor._update_status(0, 89)
+            assert "超出当前游戏音域" not in editor.status.text()
+            editor.transpose = 0
+            editor._invalid_pitch_cache.clear()
+            editor._update_status(0, 89)
+            assert "超出当前游戏音域" in editor.status.text()
+            editor._update_status(0, 88)
+            assert "超出当前游戏音域" not in editor.status.text()
+            assert tuple(canvas.notes) == before
+            assert track.notes[0].pitch == 89
+            editor.close()
+            window.close()
+            app.processEvents()
+            """
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_game_legality_uses_verified_profile_not_wwise_sample_span(self) -> None:
         completed = _run_offscreen(
             """
@@ -37,8 +81,8 @@ class InstrumentEditorUiTests(unittest.TestCase):
                 {60, 65, 66, 67, 72, 73, 74, 77, 78, 79}
             )
             assert game_supported_pitches(0x05) == frozenset({60, 65, 71})
-            assert game_supported_pitches(0x13) is None
-            assert 0x13 not in BDO_EDITOR_PITCH_RANGES
+            assert game_supported_pitches(0x13) == frozenset(range(45, 89))
+            assert BDO_EDITOR_PITCH_RANGES[0x13] == frozenset(range(45, 89))
             """
         )
         self.assertEqual(

@@ -6,6 +6,8 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QFrame,
+    QHBoxLayout,
     QLabel,
     QProgressBar,
     QTextBrowser,
@@ -57,6 +59,22 @@ class SelfUpdateDialog(QDialog):
         self.source_label.setObjectName("Muted")
         layout.addWidget(self.source_label)
 
+        self.status_card = QFrame()
+        self.status_card.setObjectName("SelfUpdateStatusCard")
+        self.status_card.setProperty("uiRole", "statusCard")
+        status_layout = QHBoxLayout(self.status_card)
+        status_layout.setContentsMargins(12, 8, 12, 8)
+        status_layout.setSpacing(8)
+        self.status_badge = QLabel()
+        self.status_badge.setObjectName("SelfUpdateStatusBadge")
+        self.status_badge.setProperty("uiRole", "statusBadge")
+        status_layout.addWidget(self.status_badge)
+        self.status_summary = QLabel()
+        self.status_summary.setObjectName("SelfUpdateStatusSummary")
+        self.status_summary.setWordWrap(True)
+        status_layout.addWidget(self.status_summary, stretch=1)
+        layout.addWidget(self.status_card)
+
         self.notes_label = QLabel()
         self.notes_label.setObjectName("SectionLabel")
         layout.addWidget(self.notes_label)
@@ -96,6 +114,8 @@ class SelfUpdateDialog(QDialog):
         self.notes_view.setPlainText(notes or tr("此版本暂无详细说明。"))
         self.close_button.setText(tr("稍后"))
         if self._ready:
+            self.status_badge.setText(tr("已准备"))
+            self.status_summary.setText(tr("更新包已验证，将在下次启动时自动安装。"))
             self.status_label.setText(
                 tr("更新包已通过验证；将在下次启动时自动安装。")
             )
@@ -103,6 +123,8 @@ class SelfUpdateDialog(QDialog):
             self.progress_bar.setValue(1)
             self.progress_bar.setFormat(tr("准备完成"))
         elif self.auto_download:
+            self.status_badge.setText(tr("下载中"))
+            self.status_summary.setText(tr("正在后台获取经过签名验证的更新包。"))
             self.status_label.setText(tr("正在后台下载更新…"))
             if self._progress_percent is None:
                 self.progress_bar.setRange(0, 0)
@@ -114,6 +136,8 @@ class SelfUpdateDialog(QDialog):
                     trf("下载进度：{percent}%", percent=self._progress_percent)
                 )
         else:
+            self.status_badge.setText(tr("可更新"))
+            self.status_summary.setText(tr("已发现新版本；可在软件更新设置中启用后台下载。"))
             self.status_label.setText(
                 tr("已发现新版本；可在软件更新设置中启用后台下载。")
             )

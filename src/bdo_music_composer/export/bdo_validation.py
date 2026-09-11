@@ -28,6 +28,14 @@ from bdo_music_composer.core.conversion_settings import VELOCITY_MODE_PRESERVE
 
 
 SEVERITIES = ("error", "warning", "info")
+ISSUE_DISPOSITIONS = (
+    "block",
+    "auto_fix",
+    "approximate",
+    "user_choice",
+    "quality_warning",
+    "info",
+)
 MessageValue = str | int | float | tuple[int, ...]
 MessageValues = tuple[tuple[str, MessageValue], ...]
 Translator = Callable[[str], str]
@@ -78,6 +86,34 @@ class ValidationIssue:
                     "validation message placeholders do not match values: "
                     f"{sorted(fields)} != {sorted(names)}"
                 )
+
+
+_APPROXIMATE_ISSUE_CODES = frozenset({
+    "drum.unmapped",
+    "pitch.wire_clamp",
+})
+_AUTOMATIC_CHANGE_ISSUE_CODES = frozenset({
+    "drum.remap",
+    "export.duration_scale",
+    "export.track_articulation",
+    "export.transpose",
+    "export.velocity_mode",
+    "tracks.merge",
+})
+
+
+def validation_issue_disposition(issue: ValidationIssue) -> str:
+    """Classify whether export can safely continue for one diagnosed issue."""
+
+    if issue.code in _APPROXIMATE_ISSUE_CODES:
+        return "approximate"
+    if issue.severity == "error":
+        return "block"
+    if issue.code in _AUTOMATIC_CHANGE_ISSUE_CODES:
+        return "auto_fix"
+    if issue.severity == "warning":
+        return "quality_warning"
+    return "info"
 
 
 def _issue(
@@ -334,7 +370,49 @@ def _validate_track_basics(
             evidence=profile.evidence.source,
             evidence_status=profile.evidence.status,
         ))
+    issues.extend(_validate_import_adaptation(item))
     return issues
+
+
+def _validate_import_adaptation(
+    item: _TrackValidationInput,
+) -> list[ValidationIssue]:
+    """Expose the retained GM-to-BDO choice without treating it as identity."""
+
+    track = item.track
+    for control in getattr(track, "performance_controls", ()):
+        if not isinstance(control, Mapping) or control.get("kind") != "midi_source":
+            continue
+        disposition = str(control.get("adaptation_disposition", ""))
+        if disposition not in {"approximate", "unsupported"}:
+            continue
+        source_program = int(control.get("source_program", getattr(track, "gm_program", 0)))
+        if disposition == "unsupported":
+            return [_issue(
+                "instrument.adaptation_unsupported", "warning",
+                "GM Program {program} 没有直接对应的 BDO 音色，当前使用 BDO 乐器 "
+                "0x{instrument_id:02X} 近似；请试听并确认。",
+                values={
+                    "program": source_program,
+                    "instrument_id": item.instrument_id,
+                },
+                track_id=item.track_id,
+                evidence=str(control.get("adaptation_reason", "GM import plan")),
+                evidence_status="approximate",
+            )]
+        return [_issue(
+            "instrument.adaptation_approximate", "info",
+            "GM Program {program} 已自动选择 BDO 乐器 0x{instrument_id:02X}；"
+            "原始音色证据已保留，可在导出前调整。",
+            values={
+                "program": source_program,
+                "instrument_id": item.instrument_id,
+            },
+            track_id=item.track_id,
+            evidence=str(control.get("adaptation_reason", "GM import plan")),
+            evidence_status="approximate",
+        )]
+    return []
 
 
 def _validate_drum_pitch_rules(
@@ -958,11 +1036,13 @@ def issues_report(
 
 
 __all__ = [
+    "ISSUE_DISPOSITIONS",
     "ValidationContext",
     "ValidationIssue",
     "evidence_status_source",
     "issues_report",
     "localized_evidence_status",
     "localized_validation_message",
+    "validation_issue_disposition",
     "validate_tracks",
 ]

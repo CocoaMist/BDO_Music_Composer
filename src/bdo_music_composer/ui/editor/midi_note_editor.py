@@ -357,8 +357,10 @@ class MidiNoteEditorDialog(QDialog):
         self._invalid_pitch_cache: dict[int, bool] = {}
         self._invalid_note_count = 0
         self._hover_status_key: tuple[int, int] | None = None
+        instrument_name = _ui_bdo_instrument_name(track.bdo_instrument_id)
         self.setWindowTitle(
-            trf("编辑音符 · {track}", track=track.display_name)
+            f"{trf('编辑音符 · {track}', track=track.display_name)}"
+            f" · BDO {instrument_name}"
         )
         self.setMinimumSize(920, 680)
         self.active_note_tool = "select"
@@ -398,15 +400,24 @@ class MidiNoteEditorDialog(QDialog):
         )
         toolbar.addWidget(self.editor_track_color)
         self.editor_title_block = QWidget()
+        # The title is informative but must yield space to transport and
+        # commit actions at the supported compact width.  Keeping it
+        # horizontally shrinkable avoids pushing the right-hand actions out
+        # of the toolbar without changing the editor's minimum window size.
+        self.editor_title_block.setMinimumWidth(0)
+        self.editor_title_block.setSizePolicy(
+            QSizePolicy.Policy.MinimumExpanding,
+            QSizePolicy.Policy.Preferred,
+        )
         title_layout = QVBoxLayout(self.editor_title_block)
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(0)
-        instrument_name = _ui_bdo_instrument_name(track.bdo_instrument_id)
         title = ElidedLabel(track.display_name, maximum_hint_width=280)
         title.setObjectName("EditorTrackTitle")
         title.setProperty("i18nSkipText", True)
         title.setToolTip(instrument_name)
         title.setAccessibleDescription(instrument_name)
+        self.editor_track_title = title
         title_layout.addWidget(title)
         self.track_meta = ElidedLabel(maximum_hint_width=280)
         self.track_meta.setObjectName("EditorTrackMeta")
@@ -415,6 +426,7 @@ class MidiNoteEditorDialog(QDialog):
         toolbar.addSpacing(10)
         self.editor_transport_frame = QFrame()
         self.editor_transport_frame.setObjectName("EditorTransport")
+        self.editor_transport_frame.setMinimumWidth(0)
         transport = QHBoxLayout(self.editor_transport_frame)
         transport.setContentsMargins(4, 1, 5, 1)
         transport.setSpacing(4)
@@ -517,6 +529,7 @@ class MidiNoteEditorDialog(QDialog):
         self.shortcut_hud_button = PillButton(tr("操作提示"), "ghost")
         self.shortcut_hud_button.setCheckable(True)
         self.shortcut_hud_button.setChecked(False)
+        self.shortcut_hud_button.setAccessibleName(tr("操作提示"))
         self.shortcut_hud_button.setToolTip(tr("在画布右上角显示当前操作提示"))
         toolbar.addWidget(self.shortcut_hud_button)
         self.editor_windows_button = PillButton(tr("窗口"), "ghost")
@@ -5817,6 +5830,8 @@ class MidiNoteEditorDialog(QDialog):
 
     def _update_status(self, ms: float = 0.0, pitch: int | None = None) -> None:
         pos = f" · {ms:.0f} ms · {note_name(pitch)}" if pitch is not None else ""
+        if pitch is not None and self.note_invalid(pitch):
+            pos += " · " + tr("超出当前游戏音域")
         warning = (
             trfv(" · 越界 {count}", count=self._invalid_note_count)
             if self._invalid_note_count
@@ -5964,10 +5979,35 @@ class MidiNoteEditorDialog(QDialog):
 
     def _update_track_meta(self) -> None:
         if hasattr(self, "track_meta"):
+            instrument_name = _ui_bdo_instrument_name(
+                self.track.bdo_instrument_id
+            )
             self.track_meta.setText(
+                f"BDO · {instrument_name}   ·   "
                 f"♫ {len(self.canvas.notes) if hasattr(self, 'canvas') else len(self.track.notes)}"
                 f"   ·   {self.bpm} BPM   ·   {self.time_sig}/4"
             )
+            self.track_meta.setToolTip(f"BDO · {instrument_name}")
+
+    def refresh_game_instrument_identity(
+        self,
+        instrument_id: int | None = None,
+    ) -> None:
+        """Refresh every visible game-instrument identity from the live Track."""
+
+        if instrument_id is not None:
+            self.track.bdo_instrument_id = int(instrument_id)
+        instrument_name = _ui_bdo_instrument_name(
+            self.track.bdo_instrument_id
+        )
+        self.setWindowTitle(
+            f"{trf('编辑音符 · {track}', track=self.track.display_name)}"
+            f" · BDO {instrument_name}"
+        )
+        if hasattr(self, "editor_track_title"):
+            self.editor_track_title.setToolTip(instrument_name)
+            self.editor_track_title.setAccessibleDescription(instrument_name)
+        self._update_track_meta()
 
     def percussion_key_label(self, pitch: int) -> str | None:
         """Expose game percussion key names without changing roll behavior."""

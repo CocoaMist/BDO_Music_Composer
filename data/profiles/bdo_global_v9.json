@@ -65,7 +65,7 @@
     "0x10": {"pitch_min": 12, "pitch_max": 90, "evidence": {"status": "verified", "source": "hand-authored in-game range score"}},
     "0x11": {"pitch_min": 12, "pitch_max": 107, "evidence": {"status": "verified", "source": "hand-authored in-game range score"}},
     "0x12": {"pitch_min": 43, "pitch_max": 88, "evidence": {"status": "verified", "source": "hand-authored in-game range score"}},
-    "0x13": {"pitch_min": 45, "pitch_max": 88, "evidence": {"status": "approximate", "source": "sample map; full in-game range pending"}},
+    "0x13": {"pitch_min": 45, "pitch_max": 88, "evidence": {"status": "verified", "source": "PAZ meta v782 musiccomposition.js static editor note table, instrument 19; SHA-256 714f2fa753997ae397a509b0010b2a892d79a2fb551e1513021fdd98b2038a23; editor range only, not audio parity", "verified_at": "2026-09-09"}},
     "0x14": {"pitch_min": 12, "pitch_max": 100, "evidence": {"status": "verified", "source": "hand-authored in-game range score"}},
     "0x18": {"pitch_min": 12, "pitch_max": 100, "evidence": {"status": "verified", "source": "hand-authored in-game range score"}},
     "0x1C": {"pitch_min": 12, "pitch_max": 100, "evidence": {"status": "verified", "source": "hand-authored in-game range score"}},

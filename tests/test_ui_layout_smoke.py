@@ -200,8 +200,9 @@ class UiLayoutSmokeTests(unittest.TestCase):
             assert shell_rect.bottom() == home_rect.bottom()
             assert window.home_sidebar.geometry().topLeft() == QPoint(0, 0)
             assert window.home_sidebar.height() == home_shell.height()
+            expected_ratio = 0.55 if window.width() < 1440 else 0.45
             assert window.home_sidebar.width() == max(
-                560, min(760, round(window.width() * 0.45))
+                600, min(760, round(window.width() * expected_ratio))
             )
             assert window.home_sidebar.width() < home_shell.width()
             assert abs(
@@ -236,13 +237,15 @@ class UiLayoutSmokeTests(unittest.TestCase):
             ) <= 1
             window.resize(1360, 820)
             app.processEvents()
+            expected_ratio = 0.55 if window.width() < 1440 else 0.45
             assert window.home_sidebar.width() == max(
-                560, min(760, round(window.width() * 0.45))
+                600, min(760, round(window.width() * expected_ratio))
             )
             window.resize(1600, 900)
             app.processEvents()
+            expected_ratio = 0.55 if window.width() < 1440 else 0.45
             assert window.home_sidebar.width() == max(
-                560, min(760, round(window.width() * 0.45))
+                600, min(760, round(window.width() * expected_ratio))
             )
             assert abs(
                 window.home_library_surface.geometry().bottom()
@@ -250,8 +253,9 @@ class UiLayoutSmokeTests(unittest.TestCase):
             ) <= 1
             window.resize(window.minimumSize())
             app.processEvents()
+            expected_ratio = 0.55 if window.width() < 1440 else 0.45
             assert window.home_sidebar.width() == max(
-                560, min(760, round(window.width() * 0.45))
+                600, min(760, round(window.width() * expected_ratio))
             )
             window.home_game_nav.click()
             app.processEvents()
@@ -476,6 +480,7 @@ class UiLayoutSmokeTests(unittest.TestCase):
             window._show_workspace()
             assert ensemble_badge.player_count == 1
             editor = MidiNoteEditorDialog(window, track, 120, 4)
+            assert "BDO" in editor.track_meta.text()
             assert window.realtime_status_timer.interval() == 16
             assert editor.playback_timer.interval() == 16
             assert editor.objectName() == "MidiNoteEditorDialog"
@@ -826,6 +831,13 @@ class UiLayoutSmokeTests(unittest.TestCase):
             editor._notes_changed()
             assert editor.draft_playback_state == "stopped"
             assert editor.canvas.preload_state == "idle"
+            original_instrument_meta = editor.track_meta.text()
+            window._note_editors[track.track_id] = editor
+            track.bdo_instrument_id = 0x12
+            window._on_track_instrument_changed(track, 0x0B)
+            assert editor.track_meta.text() != original_instrument_meta
+            assert "BDO" in editor.windowTitle()
+            assert "BDO" in window.project_note_status.text()
             editor.close()
             window.close()
             app.processEvents()
@@ -836,8 +848,11 @@ class UiLayoutSmokeTests(unittest.TestCase):
         env["QT_QPA_PLATFORM"] = "offscreen"
         with tempfile.TemporaryDirectory() as user_data_dir:
             env["BDO_USER_DATA_DIR"] = user_data_dir
+            env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+            script_path = Path(user_data_dir) / "ui-layout-smoke.py"
+            script_path.write_text(script, encoding="utf-8")
             completed = subprocess.run(
-                [sys.executable, "-c", script], cwd=ROOT, env=env,
+                [sys.executable, str(script_path)], cwd=ROOT, env=env,
                 capture_output=True, text=True, timeout=60,
             )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)

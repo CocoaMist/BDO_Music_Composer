@@ -3513,6 +3513,15 @@ EN.update({
     "未知 BDO 乐器 ID 0x{instrument_id:02X}。": (
         "Unknown BDO instrument ID 0x{instrument_id:02X}."
     ),
+    "GM Program {program} 已自动选择 BDO 乐器 0x{instrument_id:02X}；原始音色证据已保留，可在导出前调整。": (
+        "GM Program {program} automatically selected BDO instrument "
+        "0x{instrument_id:02X}; the source timbre evidence is retained and the "
+        "choice can be changed before export."
+    ),
+    "GM Program {program} 没有直接对应的 BDO 音色，当前使用 BDO 乐器 0x{instrument_id:02X} 近似；请试听并确认。": (
+        "GM Program {program} has no direct BDO timbre match. BDO instrument "
+        "0x{instrument_id:02X} is used as an approximation; preview and confirm it."
+    ),
     "{count} 个 GM 打击乐音符没有 BDO 映射：{pitches}。": (
         "GM percussion notes without a BDO mapping: {count}; pitches: {pitches}."
     ),
@@ -3640,6 +3649,14 @@ JA.update({
     ),
     "未知 BDO 乐器 ID 0x{instrument_id:02X}。": (
         "不明なBDO楽器ID 0x{instrument_id:02X}です。"
+    ),
+    "GM Program {program} 已自动选择 BDO 乐器 0x{instrument_id:02X}；原始音色证据已保留，可在导出前调整。": (
+        "GM Program {program}からBDO楽器0x{instrument_id:02X}を自動選択しました。"
+        "元の音色情報は保持され、書き出し前に変更できます。"
+    ),
+    "GM Program {program} 没有直接对应的 BDO 音色，当前使用 BDO 乐器 0x{instrument_id:02X} 近似；请试听并确认。": (
+        "GM Program {program}に直接対応するBDO音色がないため、BDO楽器"
+        "0x{instrument_id:02X}で近似します。試聴して確認してください。"
     ),
     "{count} 个 GM 打击乐音符没有 BDO 映射：{pitches}。": (
         "BDOマッピングのないGMパーカッションノートが{count}個あります：{pitches}。"
@@ -3771,6 +3788,14 @@ KO.update({
     ),
     "未知 BDO 乐器 ID 0x{instrument_id:02X}。": (
         "알 수 없는 BDO 악기 ID 0x{instrument_id:02X}입니다."
+    ),
+    "GM Program {program} 已自动选择 BDO 乐器 0x{instrument_id:02X}；原始音色证据已保留，可在导出前调整。": (
+        "GM Program {program}에서 BDO 악기 0x{instrument_id:02X}을(를) 자동 "
+        "선택했습니다. 원본 음색 근거는 유지되며 내보내기 전에 변경할 수 있습니다."
+    ),
+    "GM Program {program} 没有直接对应的 BDO 音色，当前使用 BDO 乐器 0x{instrument_id:02X} 近似；请试听并确认。": (
+        "GM Program {program}에 직접 대응하는 BDO 음색이 없어 BDO 악기 "
+        "0x{instrument_id:02X}으로 근사합니다. 미리 듣고 확인하세요."
     ),
     "{count} 个 GM 打击乐音符没有 BDO 映射：{pitches}。": (
         "BDO 매핑이 없는 GM 타악기 노트가 {count}개 있습니다: {pitches}."
@@ -4772,6 +4797,7 @@ EN.update({
     "导出、解析、试听与界面设置；保存后立即应用相关更改。": "Export, parsing, preview, and interface settings; related changes apply immediately after saving.",
     "无法读取 MIDI 拍号，已阻止导出：{error}": "Could not read the MIDI meter; export was blocked: {error}",
     "正在完成最终自动保存…": "Finishing the final autosave…",
+    "最终保存失败，窗口保持打开。请检查磁盘空间或权限后重试关闭：{error}": "Final save failed; the window remains open. Check disk space or permissions, then try closing again: {error}",
     "游戏曲谱目录": "Game score folder",
     "游戏曲谱目录不可用": "Game Score Folder Unavailable",
     "请选择有效的游戏曲谱目录。": "Choose a valid game score folder.",
@@ -4791,6 +4817,7 @@ JA.update({
     "导出、解析、试听与界面设置；保存后立即应用相关更改。": "書き出し、解析、試聴、画面の設定です。関連する変更は保存後すぐに反映されます。",
     "无法读取 MIDI 拍号，已阻止导出：{error}": "MIDIの拍子を読み取れないため書き出しを停止しました：{error}",
     "正在完成最终自动保存…": "最後の自動保存を完了しています…",
+    "最终保存失败，窗口保持打开。请检查磁盘空间或权限后重试关闭：{error}": "最後の保存に失敗したため、ウィンドウを開いたままにしています。空き容量やアクセス権を確認してから、もう一度閉じてください：{error}",
     "游戏曲谱目录": "ゲーム楽譜フォルダー",
     "游戏曲谱目录不可用": "ゲーム楽譜フォルダーを使用できません",
     "请选择有效的游戏曲谱目录。": "有効なゲーム楽譜フォルダーを選択してください。",
@@ -4810,6 +4837,7 @@ KO.update({
     "导出、解析、试听与界面设置；保存后立即应用相关更改。": "내보내기, 분석, 미리듣기와 화면 설정입니다. 관련 변경은 저장 후 즉시 적용됩니다.",
     "无法读取 MIDI 拍号，已阻止导出：{error}": "MIDI 박자를 읽을 수 없어 내보내기를 차단했습니다: {error}",
     "正在完成最终自动保存…": "마지막 자동 저장을 완료하는 중…",
+    "最终保存失败，窗口保持打开。请检查磁盘空间或权限后重试关闭：{error}": "마지막 저장에 실패하여 창을 열어 두었습니다. 디스크 공간이나 권한을 확인한 뒤 다시 닫으세요: {error}",
     "游戏曲谱目录": "게임 악보 폴더",
     "游戏曲谱目录不可用": "게임 악보 폴더를 사용할 수 없음",
     "请选择有效的游戏曲谱目录。": "유효한 게임 악보 폴더를 선택하세요.",
@@ -5938,4 +5966,6 @@ KO.update({
     "当前音符没有独立的 Wwise 力度分层": "이 노트에는 별도의 Wwise 벨로시티 레이어가 없습니다",
 })
 
-
+EN["超出当前游戏音域"] = "Outside the current game pitch range"
+JA["超出当前游戏音域"] = "現在のゲーム音域外"
+KO["超出当前游戏音域"] = "현재 게임 음역 밖"

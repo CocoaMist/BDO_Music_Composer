@@ -15,6 +15,11 @@ from bdo_music_composer.app.application_metadata import APP_NAME, APP_VERSION
 
 RELEASE_EVIDENCE_SCHEMA = 1
 SPDX_VERSION = "SPDX-2.3"
+_APPLICATION_DISTRIBUTION_NAME = "bdo-music-composer"
+
+
+def _normalized_distribution_name(value: str) -> str:
+    return value.strip().casefold().replace("_", "-").replace(".", "-")
 
 
 def sha256_file(path: str | Path) -> str:
@@ -37,6 +42,11 @@ def installed_packages() -> tuple[InstalledPackage, ...]:
     for distribution in importlib.metadata.distributions():
         name = str(distribution.metadata.get("Name") or "").strip()
         if not name:
+            continue
+        # The release artifact is already the SPDX document's described file.
+        # Editable environments can retain stale metadata for this project, so
+        # listing the application again as its own dependency is misleading.
+        if _normalized_distribution_name(name) == _APPLICATION_DISTRIBUTION_NAME:
             continue
         license_value = str(
             distribution.metadata.get("License-Expression")

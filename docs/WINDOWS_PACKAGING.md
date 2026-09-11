@@ -93,6 +93,11 @@ accepted because it can return before a windowed executable exits.
 
 ## Reproducible dependency set
 
+The build temporarily restricts `PATH` to the selected Python environment,
+Windows runtime directories and Git. This prevents host-injected third-party
+DLL directories from supplying incompatible C++ runtimes to PyInstaller.
+The original `PATH` is restored when the build exits.
+
 `requirements/desktop.txt`, `requirements/transcription.txt`, and
 `requirements/build.txt` describe the direct dependency groups.
 `requirements/windows-py312.txt` pins their complete Windows/CPython 3.12.10

@@ -654,12 +654,12 @@ class RealtimeAudioTests(unittest.TestCase):
         self.assertIsNotNone(selected)
         self.assertEqual(selected[0], "midi_instrument_synth_saw_super")
 
-    def test_only_verified_hand_authored_game_ranges_are_enforced(self) -> None:
+    def test_verified_game_editor_ranges_are_enforced(self) -> None:
         self.assertEqual((min(BDO_EDITOR_PITCH_RANGES[0x0A]), max(BDO_EDITOR_PITCH_RANGES[0x0A])), (36, 88))
         self.assertEqual((min(BDO_EDITOR_PITCH_RANGES[0x0E]), max(BDO_EDITOR_PITCH_RANGES[0x0E])), (28, 64))
         self.assertEqual((min(BDO_EDITOR_PITCH_RANGES[0x0F]), max(BDO_EDITOR_PITCH_RANGES[0x0F])), (28, 64))
         self.assertEqual((min(BDO_EDITOR_PITCH_RANGES[0x12]), max(BDO_EDITOR_PITCH_RANGES[0x12])), (43, 88))
-        self.assertNotIn(0x13, BDO_EDITOR_PITCH_RANGES)
+        self.assertEqual(frozenset(range(45, 89)), BDO_EDITOR_PITCH_RANGES[0x13])
 
     def test_project_preload_deduplicates_sources_and_preserves_zero_velocity(
         self,

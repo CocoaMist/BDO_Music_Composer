@@ -78,6 +78,8 @@ class SelfUpdateUiTests(unittest.TestCase):
                     assert "1.2.0.1" in dialog.windowTitle()
                     assert dialog.notes_view.toPlainText() == "中文更新内容"
                     assert "Gitee" in dialog.source_label.text()
+                    assert dialog.status_badge.text() == "下载中"
+                    assert dialog.status_summary.text()
 
                     host._on_update_progress(50, 100)
                     assert dialog.progress_bar.value() == 50
@@ -91,6 +93,11 @@ class SelfUpdateUiTests(unittest.TestCase):
                     host._on_update_ready(prepared)
                     assert dialog.progress_bar.value() == 1
                     assert "下次启动" in dialog.status_label.text()
+                    assert dialog.status_badge.text() == "已准备"
+
+                    host._on_update_failed("insufficient disk space for update: download")
+                    assert "磁盘空间不足" in host.toasts[-1][0], host.toasts[-1]
+                    assert host.toasts[-1][1] == "error"
 
                     active.set_language("en_US")
                     app.processEvents()

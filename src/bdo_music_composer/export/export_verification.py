@@ -35,6 +35,7 @@ from bdo_export import (
 from bdo_midi import (
     BDO_INSTRUMENTS,
     DEFAULT_INSTRUMENT,
+    DRUM_UNMAPPED_FALLBACK_PITCH,
     clamp_notes,
     map_drum_notes,
     normalize_drum_note_timing,
@@ -280,7 +281,10 @@ def _project_track_notes(
         for note in projected
     )
     if percussion:
-        transformed = list(map_drum_notes(projected))
+        transformed = list(map_drum_notes(
+            projected,
+            unmapped_fallback_pitch=DRUM_UNMAPPED_FALLBACK_PITCH,
+        ))
     else:
         transformed = list(clamp_notes(projected))
 

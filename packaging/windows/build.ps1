@@ -41,9 +41,27 @@ $PreviousQtPlatform = [Environment]::GetEnvironmentVariable(
     "QT_QPA_PLATFORM",
     "Process"
 )
+$PreviousPath = $env:PATH
+# Do not bundle unrelated DLLs injected into PATH by a host application.
+# Prefer the reviewed Python environment and the Windows runtime libraries.
+$PythonBase = (& $Python -c "import sys; print(sys.base_prefix)").Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw "Cannot resolve the build Python runtime"
+}
+$GitCommand = Get-Command git -ErrorAction SilentlyContinue
+$BuildPathEntries = @(
+    (Split-Path $Python -Parent),
+    $PythonBase,
+    (Join-Path $env:SystemRoot "System32"),
+    $env:SystemRoot
+)
+if ($GitCommand) {
+    $BuildPathEntries += Split-Path $GitCommand.Source -Parent
+}
 
 Push-Location $ProjectRoot
 try {
+    $env:PATH = $BuildPathEntries -join [IO.Path]::PathSeparator
     if (Test-Path -LiteralPath $OutputExecutable) {
         try {
             $OutputProbe = [IO.File]::Open(
@@ -163,6 +181,7 @@ assert callable(soxr.ResampleStream)
     Write-Host "Built and verified: $OutputExecutable"
 }
 finally {
+    $env:PATH = $PreviousPath
     Pop-Location
     if ($null -eq $PreviousLicenseDir) {
         Remove-Item Env:\BDO_TRANSCRIPTION_LICENSE_DIR `

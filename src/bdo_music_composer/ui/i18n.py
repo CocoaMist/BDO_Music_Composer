@@ -1475,6 +1475,11 @@ _RELEASE_UPDATE_TRANSLATIONS = {
         "更新確認に失敗しました。後でもう一度お試しください",
         "업데이트 확인에 실패했습니다. 나중에 다시 시도하세요",
     ),
+    "更新所需磁盘空间不足，请清理空间后重试": (
+        "There is not enough disk space for the update; free some space and try again",
+        "更新に必要な空き容量が不足しています。空き容量を確保してから再試行してください",
+        "업데이트에 필요한 디스크 공간이 부족합니다. 공간을 확보한 후 다시 시도하세요",
+    ),
     "已更新至 v{version}": (
         "Updated to v{version}",
         "v{version} に更新しました",
@@ -3538,6 +3543,15 @@ _DAW_WORKFLOW_TRANSLATIONS = {
 }
 
 for _source, (_english, _japanese, _korean) in _DAW_WORKFLOW_TRANSLATIONS.items():
+    EN[_source] = _english
+    JA[_source] = _japanese
+    KO[_source] = _korean
+
+del _source, _english, _japanese, _korean
+
+from .ui_refinement_translations import UI_REFINEMENT_TRANSLATIONS
+
+for _source, (_english, _japanese, _korean) in UI_REFINEMENT_TRANSLATIONS.items():
     EN[_source] = _english
     JA[_source] = _japanese
     KO[_source] = _korean

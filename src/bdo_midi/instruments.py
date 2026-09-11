@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 
 BDO_INSTRUMENTS = {
@@ -182,25 +183,6 @@ GM_PROGRAM_NAMES = (
     "吉他品噪", "呼吸声", "海浪声", "鸟鸣", "电话铃", "直升机", "掌声", "枪声",
 )
 
-_PROGRAM_FAMILIES = (
-    (24, "piano"),
-    (32, "guitar"),
-    (40, "contrabass"),
-    (42, "violin"),
-    (44, "contrabass"),
-    (47, "harp"),
-    (48, "drum_set"),
-    (56, "violin"),
-    (64, "horn"),
-    (72, "clarinet"),
-    (88, "flute"),
-    (96, "violin"),
-    (104, "piano"),
-    (112, "handpan"),
-    (120, "hand_drum"),
-    (128, "piano"),
-)
-
 _GM_TO_BDO_DRUM = {
     35: 48, 36: 48, 37: 49, 38: 50, 39: 50, 40: 50,
     41: 53, 42: 54, 43: 55, 44: 56, 45: 57, 46: 58,
@@ -208,6 +190,155 @@ _GM_TO_BDO_DRUM = {
     53: 62, 54: 61, 55: 61, 56: 51, 57: 61, 58: 51,
     59: 62, 60: 63, 61: 64,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class GmInstrumentCandidate:
+    instrument_id: int
+    marnian_mode: str
+    score: float
+    pitch_coverage: float
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class GmInstrumentPlan:
+    source_program: int
+    is_percussion: bool
+    instrument_id: int
+    marnian_mode: str
+    disposition: str
+    reason: str
+    candidates: tuple[GmInstrumentCandidate, ...]
+
+
+def _candidate_specs(program: int) -> tuple[str, tuple[tuple[str, str, float], ...]]:
+    """Return a small timbre-first candidate set for every GM program."""
+
+    if 0 <= program <= 7:
+        return "approximate", (("piano", "basic", 1.0), ("beginner_piano", "basic", .65))
+    if 8 <= program <= 15:
+        return "approximate", (("handpan", "basic", .95), ("piano", "basic", .72), ("harp", "basic", .62))
+    if 16 <= program <= 23:
+        return "approximate", (("piano", "basic", .82), ("clarinet", "basic", .58), ("flute", "basic", .52))
+    if 24 <= program <= 25:
+        return "approximate", (("guitar", "basic", 1.0), ("beginner_guitar", "basic", .62))
+    if 26 <= program <= 27:
+        return "approximate", (("eguitar_silver", "basic", 1.0), ("guitar", "basic", .62))
+    if program == 28:
+        return "approximate", (("eguitar_silver", "basic", .95), ("eguitar_highway", "basic", .76))
+    if program == 29:
+        return "approximate", (("eguitar_highway", "basic", 1.0), ("eguitar_hexe", "basic", .78))
+    if 30 <= program <= 31:
+        return "approximate", (("eguitar_hexe", "basic", 1.0), ("eguitar_highway", "basic", .72))
+    if 32 <= program <= 37:
+        return "approximate", (("contrabass", "basic", .96), ("marnibass", "basic", .82))
+    if 38 <= program <= 39:
+        return "approximate", (("marnibass", "basic", 1.0), ("contrabass", "basic", .70))
+    if 40 <= program <= 43:
+        second = "contrabass" if program == 43 else "beginner_violin"
+        return "approximate", (("violin", "basic", 1.0), (second, "basic", .68))
+    if 44 <= program <= 45:
+        return "approximate", (("violin", "basic", .96), ("harp", "basic", .60))
+    if program == 46:
+        return "approximate", (("harp", "basic", 1.0), ("beginner_harp", "basic", .65))
+    if program == 47:
+        # GM Timpani is pitched. BDO drum pitches are kit keys, not melody.
+        return "approximate", (("piano", "basic", .82), ("handpan", "basic", .78), ("contrabass", "basic", .55))
+    if 48 <= program <= 54:
+        return "approximate", (("violin", "basic", .94), ("harp", "basic", .56))
+    if program == 55:
+        return "approximate", (("handpan", "basic", .78), ("horn", "basic", .72), ("piano", "basic", .60))
+    if 56 <= program <= 63:
+        return "approximate", (("horn", "basic", .95), ("clarinet", "basic", .58))
+    if 64 <= program <= 71:
+        return "approximate", (("clarinet", "basic", .92), ("horn", "basic", .62), ("flute", "basic", .52))
+    if 72 <= program <= 73:
+        return "approximate", (("flute", "basic", .98), ("beginner_flute", "basic", .62))
+    if program in (74, 76, 77, 78, 79):
+        return "approximate", (("beginner_recorder", "basic", .92), ("flute", "basic", .82), ("clarinet", "basic", .55))
+    if program == 75:
+        return "approximate", (("flute", "basic", .90), ("beginner_recorder", "basic", .74))
+    if program == 80:
+        return "approximate", (("marnian_secret", "basic", 1.0), ("marnian_wavy", "basic", .65))
+    if program == 81:
+        return "approximate", (("marnian_wavy", "basic", 1.0), ("marnian_secret", "basic", .65))
+    if 82 <= program <= 87:
+        modes = {85: ("marnian_illusion", "basic"), 86: ("marnian_wavy", "superoct"), 87: ("marnian_sandwich", "basic")}
+        primary_name, mode = modes.get(program, ("marnian_wavy", "basic"))
+        return "approximate", ((primary_name, mode, .94), ("marnian_secret", "basic", .68))
+    if 88 <= program <= 95:
+        primary = ("marnian_sandwich", "stereo") if program in (88, 89, 91, 94) else ("marnian_illusion", "stereo")
+        return "approximate", ((primary[0], primary[1], .94), ("marnian_wavy", "stereo", .68), ("violin", "basic", .48))
+    if 96 <= program <= 103:
+        return "approximate", (("marnian_illusion", "stereo", .88), ("marnian_sandwich", "stereo", .82), ("handpan", "basic", .55))
+    ethnic: dict[int, tuple[str, str]] = {
+        104: ("guitar", "basic"), 105: ("guitar", "basic"), 106: ("guitar", "basic"),
+        107: ("harp", "basic"), 108: ("handpan", "basic"),
+        109: ("beginner_recorder", "basic"), 110: ("violin", "basic"),
+        111: ("clarinet", "basic"),
+    }
+    if program in ethnic:
+        name, mode = ethnic[program]
+        return "approximate", ((name, mode, .92), ("piano", "basic", .48))
+    if 112 <= program <= 119:
+        primary = "cymbals" if program in (115, 119) else "handpan"
+        return "approximate", ((primary, "basic", .82), ("piano", "basic", .62), ("hand_drum", "basic", .50))
+    return "unsupported", (("marnian_illusion", "stereo", .62), ("marnian_sandwich", "stereo", .58), ("piano", "basic", .40))
+
+
+PitchSupport = Callable[[int, int], bool]
+
+
+def plan_gm_to_bdo_instrument(
+    program: int,
+    is_percussion: bool = False,
+    *,
+    pitches: tuple[int, ...] = (),
+    pitch_support: PitchSupport | None = None,
+) -> GmInstrumentPlan:
+    """Build a deterministic, inspectable import choice instead of a blind map."""
+
+    numeric_program = int(program)
+    if is_percussion:
+        candidate = GmInstrumentCandidate(
+            BDO_INSTRUMENTS["drum_set"], "basic", 1.0, 1.0,
+            "General MIDI channel 10 percussion",
+        )
+        return GmInstrumentPlan(
+            numeric_program, True, candidate.instrument_id, "basic", "direct",
+            candidate.reason, (candidate,),
+        )
+
+    disposition, specs = _candidate_specs(numeric_program)
+    unique_pitches = tuple(sorted(set(int(pitch) for pitch in pitches)))
+    candidates: list[GmInstrumentCandidate] = []
+    for instrument_name, mode, base_score in specs:
+        instrument_id = BDO_INSTRUMENTS[instrument_name]
+        coverage = 1.0
+        if unique_pitches and pitch_support is not None:
+            supported = sum(1 for pitch in unique_pitches if pitch_support(instrument_id, pitch))
+            coverage = supported / len(unique_pitches)
+        candidates.append(GmInstrumentCandidate(
+            instrument_id=instrument_id,
+            marnian_mode=mode,
+            score=round(base_score * (.35 + .65 * coverage), 4),
+            pitch_coverage=round(coverage, 4),
+            reason=f"GM family candidate for program {numeric_program}",
+        ))
+    candidates.sort(
+        key=lambda item: (item.pitch_coverage == 1.0, item.pitch_coverage, item.score, -item.instrument_id),
+        reverse=True,
+    )
+    selected = candidates[0]
+    reason = (
+        f"GM program {numeric_program} selected BDO 0x{selected.instrument_id:02X}; "
+        f"pitch coverage {selected.pitch_coverage:.0%}"
+    )
+    return GmInstrumentPlan(
+        numeric_program, False, selected.instrument_id, selected.marnian_mode,
+        disposition, reason, tuple(candidates),
+    )
 
 
 def gm_program_name(program: int) -> str:
@@ -227,22 +358,7 @@ def localized_gm_program_name(
 
 
 def gm_to_bdo_instrument(program: int, is_percussion: bool = False) -> int:
-    if is_percussion:
-        return BDO_INSTRUMENTS["drum_set"]
-    explicit = {
-        24: "guitar", 25: "guitar",
-        26: "eguitar_silver", 27: "eguitar_silver", 28: "eguitar_silver",
-        29: "eguitar_highway", 30: "eguitar_hexe", 31: "eguitar_hexe",
-        32: "contrabass", 46: "harp", 47: "drum_set",
-    }
-    if program in explicit:
-        return BDO_INSTRUMENTS[explicit[program]]
-    if 33 <= program <= 39:
-        return BDO_INSTRUMENTS["marnibass"]
-    for upper_bound, instrument_name in _PROGRAM_FAMILIES:
-        if program < upper_bound:
-            return BDO_INSTRUMENTS[instrument_name]
-    return DEFAULT_INSTRUMENT
+    return plan_gm_to_bdo_instrument(program, is_percussion).instrument_id
 
 
 __all__ = [
@@ -250,11 +366,11 @@ __all__ = [
     "BDO_INSTRUMENTS", "BDO_INSTRUMENT_NAMES",
     "BDO_NOTE_MIN", "BDO_NOTE_MAX", "MARNIAN_SYNTH_INSTRUMENT_IDS",
     "MARNIAN_SYNTH_MODE_OFFSETS",
-    "GM_PROGRAM_NAMES",
+    "GM_PROGRAM_NAMES", "GmInstrumentCandidate", "GmInstrumentPlan",
     "InstrumentNameTranslator", "instrument_supports_composer_effects",
     "localized_bdo_instrument_name",
     "localized_bdo_instrument_names", "localized_gm_program_name",
     "DEFAULT_INSTRUMENT", "_GM_TO_BDO_DRUM", "gm_program_name",
-    "gm_to_bdo_instrument", "performance_instrument_id",
+    "gm_to_bdo_instrument", "plan_gm_to_bdo_instrument", "performance_instrument_id",
     "unique_performance_instrument_ids",
 ]

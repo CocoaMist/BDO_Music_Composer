@@ -16,7 +16,11 @@ from bdo_export import (
     make_track_settings,
     score_summary,
 )
-from bdo_midi import MARNIAN_SYNTH_INSTRUMENT_IDS, MARNIAN_SYNTH_MODE_OFFSETS
+from bdo_midi import (
+    DRUM_UNMAPPED_FALLBACK_PITCH,
+    MARNIAN_SYNTH_INSTRUMENT_IDS,
+    MARNIAN_SYNTH_MODE_OFFSETS,
+)
 from bdo_common.bdo_track_effects import (
     DEFAULT_TRACK_VOLUME,
     MasterEffects,
@@ -571,6 +575,10 @@ def prepare_export(request: ExportRequest) -> PreparedExport:
             # B was bound to each occurrence before pitch/time/articulation
             # projection, so identity-changing transforms cannot drop it.
             velocity_b_maps=None,
+            # Structured diagnostics retain the unsupported source pitch. If
+            # the user confirms export anyway, emit a playable canonical hit
+            # instead of failing later in projection or verification.
+            unmapped_drum_fallback_pitch=DRUM_UNMAPPED_FALLBACK_PITCH,
         )
     return PreparedExport(
         request.out_path,

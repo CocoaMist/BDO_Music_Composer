@@ -278,6 +278,25 @@ class ExportVerificationTests(unittest.TestCase):
             verify_export_bytes(expectation, prepared.data).matches
         )
 
+    def test_unmapped_gm_drum_uses_same_fallback_in_export_and_verifier(self) -> None:
+        track = MutableTrack(
+            [Note(75, 91, 0.0, 300.0, 0)],
+            is_percussion=True,
+            bdo_instrument_id=0x0D,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            request = make_request(Path(temp), [track])
+            expectation = build_export_expectation(request)
+            result = execute_export(request)
+            exported_data = request.out_path.read_bytes()
+            note = decode_score(exported_data).groups[0].tracks[0].notes[0]
+
+        self.assertEqual((note.pitch, note.ntype), (50, 99))
+        self.assertTrue(
+            verify_export_bytes(expectation, exported_data).matches
+        )
+        self.assertTrue(result[2]["verification_report"].matches)
+
     def test_source_reuse_honors_requested_volume_and_velocity_b(self) -> None:
         source_record = (60, 91, 1.25, 300.5, 11, 72)
         source_data, _summary = channel_groups_to_bdo(

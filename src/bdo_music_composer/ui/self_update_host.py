@@ -8,7 +8,10 @@ from bdo_music_composer.app.application_metadata import APP_VERSION
 from bdo_music_composer.app.crash_logging import append_crash_log
 from bdo_music_composer.ui.dialogs.self_update_dialog import SelfUpdateDialog
 from bdo_music_composer.ui.i18n import tr, trf
-from bdo_music_composer.ui.self_update_qt import PreparedUpdate
+from bdo_music_composer.ui.self_update_qt import (
+    INSUFFICIENT_DISK_SPACE_MESSAGE,
+    PreparedUpdate,
+)
 from bdo_music_composer.update.preferences import update_preferences
 from bdo_music_composer.update.install import (
     POST_UPDATE_STATE_ENVIRONMENT,
@@ -98,7 +101,13 @@ class SelfUpdateHostMixin:
         self._manual_update_check = False
 
     def _on_update_failed(self, message: str) -> None:
-        if self._manual_update_check:
+        if str(message).startswith(INSUFFICIENT_DISK_SPACE_MESSAGE):
+            self.show_toast(
+                tr("更新所需磁盘空间不足，请清理空间后重试"),
+                kind="error",
+                duration_ms=6000,
+            )
+        elif self._manual_update_check:
             self.show_toast(tr("检查更新失败，请稍后重试"), kind="error")
         else:
             append_crash_log("Background update check failed", str(message))

@@ -23,6 +23,8 @@ class TimelineNavigationUiTests(unittest.TestCase):
             from bdo_midi import Note
             from bdo_music_composer.editor.editor_models import TrackState
             from bdo_music_composer.ui.editor.timeline_canvas import TimelineCanvas
+            from bdo_music_composer.ui.editor.timeline_track_identity import game_instrument_name
+            from bdo_music_composer.ui.i18n import tr
 
             app = QApplication([])
             first = TrackState(
@@ -40,6 +42,12 @@ class TimelineNavigationUiTests(unittest.TestCase):
             canvas = TimelineCanvas()
             canvas.resize(1100, 520)
             canvas.set_tracks([first, second, third])
+            first_game_instrument = game_instrument_name(first, tr)
+            assert first_game_instrument
+            original_third_instrument = game_instrument_name(third, tr)
+            third.bdo_instrument_id = 0x0B
+            assert game_instrument_name(third, tr) != original_third_instrument
+            third.bdo_instrument_id = 0x13
             canvas.set_timeline_markers([{"time_ms": 450.0, "label": "A"}])
             canvas.set_selected_track(first)
             canvas.show()

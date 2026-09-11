@@ -40,6 +40,37 @@ from bdo_music_composer.ui.main_window import BDO_ARTICULATIONS, copy_export_to_
 
 
 class BdoExportRoundTripTests(unittest.TestCase):
+    def test_every_melodic_range_preserves_pitch_and_synth_mode_on_wire(self) -> None:
+        from bdo_music_composer.editor.bdo_instrument_adaptation import (
+            instrument_editor_display_adaptations,
+        )
+        from bdo_midi import MARNIAN_SYNTH_MODE_OFFSETS
+
+        for instrument_id, adaptation in instrument_editor_display_adaptations().items():
+            if adaptation.family.value == "percussion" or not adaptation.legal_pitches:
+                continue
+            modes = MARNIAN_SYNTH_MODE_OFFSETS if instrument_id in (0x14, 0x18, 0x1C, 0x20) else {"basic": 0}
+            pitches = sorted(adaptation.legal_pitches)
+            for mode, offset in modes.items():
+                with self.subTest(instrument=instrument_id, mode=mode):
+                    notes = [Note(pitch, 90, index * 250.0, 200.0, 0) for index, pitch in enumerate(pitches)]
+                    track = TrackState(1, notes, 0, False, "pitch probe", instrument_id, marnian_synth_mode=mode)
+                    request = ExportRequest(
+                        direct_tracks=freeze_export_tracks((track,)),
+                        bpm=120, time_signature=4, out_path=Path("unused-probe"),
+                        character_name="Test", owner_id=123,
+                        conversion=ConversionSettings.bdo_import_defaults(),
+                        pitch_plan=PitchTransformPlan(0), reverb=0, delay=0,
+                        chorus=None, game_dir=Path("unused-game"),
+                    )
+                    document = decode_score(prepare_export(request).data)
+                    physical = [item for group in document.groups for item in group.tracks]
+                    self.assertEqual({item.instrument_id for item in physical}, {instrument_id + offset})
+                    self.assertEqual(
+                        [(note.pitch, note.ntype) for item in physical for note in item.notes],
+                        [(pitch, 0) for pitch in pitches],
+                    )
+
     def test_right_region_resize_reaches_game_wire_without_note_scaling(self) -> None:
         track = TrackState(
             1,

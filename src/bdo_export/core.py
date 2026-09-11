@@ -272,6 +272,7 @@ def channel_groups_to_bdo(
     track_volumes=None,
     track_settings_map=None,
     velocity_b_maps=None,
+    unmapped_drum_fallback_pitch=None,
 ):
     """Convert logical editor groups to an encrypted canonical BDO v9 score."""
     output_bpm = bounded_int(
@@ -308,7 +309,10 @@ def channel_groups_to_bdo(
         )
         notes = list(bind_dual_velocities(source_notes, velocity_b_records))
         if drum_track:
-            notes = map_drum_notes(notes)
+            notes = map_drum_notes(
+                notes,
+                unmapped_fallback_pitch=unmapped_drum_fallback_pitch,
+            )
         else:
             if transpose:
                 notes = transpose_notes(notes, int(transpose))

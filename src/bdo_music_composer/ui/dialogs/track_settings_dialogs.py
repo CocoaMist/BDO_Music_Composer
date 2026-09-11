@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSpinBox,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -120,6 +121,21 @@ class TrackPitchDialog(QDialog):
         self.semitone_offset.setValue(current_offset)
         form.addRow(tr("轨道移调"), self.semitone_offset)
 
+        preset_row = QHBoxLayout()
+        preset_row.addStretch(1)
+        reset_button = QPushButton(tr("重置"))
+        reset_button.setObjectName("TrackPitchReset")
+        reset_button.setToolTip(tr("恢复为不移调"))
+        reset_button.clicked.connect(lambda: self.semitone_offset.setValue(0))
+        preset_row.addWidget(reset_button)
+        for value in (-12, 12):
+            button = QPushButton(f"{value:+d}")
+            button.setObjectName("TrackPitchPreset")
+            button.setToolTip(tr("常用八度移调"))
+            button.clicked.connect(lambda _checked=False, v=value: self.semitone_offset.setValue(v))
+            preset_row.addWidget(button)
+        form.addRow("", preset_row)
+
         self.effective_label = QLabel()
         self.effective_label.setObjectName("Muted")
         self.effective_label.setWordWrap(True)
@@ -166,8 +182,11 @@ class ClipVelocityBaseDialog(QDialog):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(12)
 
+        safe_name = str(display_name).strip()
+        if safe_name.startswith(("track-", "clip-", "track:", "clip:")):
+            safe_name = tr("所选片段")
         title = QLabel(
-            display_name
+            safe_name
             if int(count) == 1
             else trf("已选择 {count} 个Clip", count=int(count))
         )

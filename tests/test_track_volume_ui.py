@@ -17,7 +17,7 @@ class TrackVolumeUiTests(unittest.TestCase):
             """
             from unittest.mock import patch
 
-            from PySide6.QtWidgets import QApplication, QDialog, QMenu
+            from PySide6.QtWidgets import QApplication, QDialog, QMenu, QLabel
 
             from bdo_music_composer.editor.editor_models import ArrangementClipState
             from bdo_music_composer.ui.dialogs.track_settings_dialogs import ClipVelocityBaseDialog
@@ -47,6 +47,9 @@ class TrackVolumeUiTests(unittest.TestCase):
             dialog = ClipVelocityBaseDialog(window, "clip-a", 1)
             assert dialog.velocity_base.minimum() == -127
             assert dialog.velocity_base.maximum() == 127
+            internal_dialog = ClipVelocityBaseDialog(window, "track-0-main", 1)
+            assert "track-0-main" not in internal_dialog.findChild(QLabel, "TrackTitle").text()
+            internal_dialog.close()
             dialog.close()
 
             requested = []

@@ -3115,11 +3115,11 @@ class PianoRollCanvas(QWidget):
                 )
         painter.restore()
 
-    def _paint_unsupported_evidence_rows(
+    def _paint_unsupported_pitch_rows(
         self, painter: QPainter, grid: QRectF
     ) -> None:
-        if not self.transcription_candidates_visible:
-            return
+        # Game limits apply to empty manual-edit rows too, before a note exists.
+        # Keep all rows editable so imported outliers remain recoverable.
         visible_rows = math.ceil(grid.height() / self.ROW_H)
         painter.save()
         painter.setClipRect(
@@ -3733,7 +3733,7 @@ class PianoRollCanvas(QWidget):
             paint_left_ms,
             paint_right_ms,
         )
-        self._paint_unsupported_evidence_rows(painter, grid)
+        self._paint_unsupported_pitch_rows(painter, grid)
         # Evidence sits below the editing grid.  Redraw horizontal guides after
         # the ready QImages so pitch rows remain legible at high intensity.
         evidence_overlays_grid = (

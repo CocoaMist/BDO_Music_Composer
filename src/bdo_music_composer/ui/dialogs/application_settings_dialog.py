@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, cast
 
-from PySide6.QtCore import QObject, QSize, QThread, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -284,6 +284,7 @@ class SettingsDialog(QDialog):
         self.output_dir = QLineEdit(parent.output_dir_path)
         self.output_dir.setObjectName("OutputDirectoryEdit")
         self.output_dir.setPlaceholderText(tr("输出目录"))
+        self.output_dir.setToolTip(tr("完整路径；文本过长时可横向滚动查看"))
         output_row.addWidget(self.output_dir, stretch=1)
         browse_output = PillButton(tr("选择"), "secondary")
         browse_output.setObjectName("BrowseOutputDirectoryButton")
@@ -303,6 +304,7 @@ class SettingsDialog(QDialog):
         self.game_music_dir = QLineEdit(parent.game_music_dir_path)
         self.game_music_dir.setObjectName("GameMusicDirectoryEdit")
         self.game_music_dir.setPlaceholderText(tr("游戏曲谱目录"))
+        self.game_music_dir.setToolTip(tr("完整路径；文本过长时可横向滚动查看"))
         game_music_row.addWidget(self.game_music_dir, stretch=1)
         browse_game_music = PillButton(tr("选择"), "secondary")
         browse_game_music.setObjectName("BrowseGameMusicDirectoryButton")
@@ -526,6 +528,8 @@ class SettingsDialog(QDialog):
         self.update_auto_download.setChecked(
             parent.update_settings.get("auto_download", True) is not False
         )
+        self.update_enabled.toggled.connect(self._refresh_update_status)
+        self.update_auto_download.toggled.connect(self._refresh_update_status)
         updates_layout.addWidget(self.update_auto_download)
 
         update_source_row = QHBoxLayout()
@@ -542,6 +546,7 @@ class SettingsDialog(QDialog):
             str(parent.update_settings.get("source", "auto"))
         )
         self.update_source.setCurrentIndex(max(0, source_index))
+        self.update_source.currentIndexChanged.connect(self._refresh_update_status)
         update_source_row.addWidget(self.update_source, stretch=1)
         check_update_button = PillButton(tr("立即检查"), "secondary")
         check_update_button.setObjectName("CheckForUpdatesButton")
@@ -552,6 +557,12 @@ class SettingsDialog(QDialog):
         updates_layout.addLayout(
             self._labeled_row("更新来源", update_source_row)
         )
+        self.update_status = QLabel()
+        self.update_status.setObjectName("SettingsUpdateStatus")
+        self.update_status.setProperty("uiRole", "statusHint")
+        self.update_status.setWordWrap(True)
+        updates_layout.addWidget(self.update_status)
+        self._refresh_update_status()
 
         general_page_layout.addStretch(1)
         midi_page_layout.addStretch(1)
@@ -916,6 +927,22 @@ class SettingsDialog(QDialog):
             self.owner_status.setProperty("ownerError", False)
         self.owner_status.style().unpolish(self.owner_status)
         self.owner_status.style().polish(self.owner_status)
+
+    def _refresh_update_status(self) -> None:
+        """Keep the update page useful when no check is currently running."""
+        if not self.update_enabled.isChecked():
+            status = tr("状态：已关闭自动检查；可随时手动检查更新。")
+        elif self.update_auto_download.isChecked():
+            status = tr("状态：已启用自动检查和后台下载；安装会在下次启动完成。")
+        else:
+            status = tr("状态：已启用自动检查；发现新版本后等待手动下载。")
+        source = self.update_source.currentText()
+        self.update_status.setText(trf("{status}\n当前来源：{source}", status=status, source=source))
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.LanguageChange and hasattr(self, "update_status"):
+            self._refresh_update_status()
 
     def _load_owner_id(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

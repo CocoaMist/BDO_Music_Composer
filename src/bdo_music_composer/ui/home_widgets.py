@@ -38,7 +38,7 @@ from bdo_music_composer.core.project_paths import ASSETS_DIR
 
 
 HOME_BACKGROUND_IMAGE = (
-    ASSETS_DIR / "ui" / "home" / "home_aristocratic_salon_v2.png"
+    ASSETS_DIR / "ui" / "home" / "home_moonlit_atelier_v3.png"
 )
 SHAI_ENSEMBLE_MARK_IMAGE = ASSETS_DIR / "icons" / "shai_ensemble_mark.png"
 HOME_INSTRUMENT_IDS_ROLE = int(Qt.ItemDataRole.UserRole) + 1

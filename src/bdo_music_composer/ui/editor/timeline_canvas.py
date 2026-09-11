@@ -38,7 +38,9 @@ from .timeline_clip_hit import (
     marquee_rect,
 )
 from .timeline_clip_metadata_qt import paint_track_clip_metadata
+from .timeline_empty_state import paint_empty_score_guidance
 from .timeline_selection_scope import select_pointer_track, selection_descriptor
+from . import timeline_track_identity as track_identity
 from bdo_music_composer.ui.i18n import tr, trf, trv
 from bdo_music_composer.editor.interval_index import IntervalIndex
 from bdo_music_composer.editor.arrangement_clip import (
@@ -2064,7 +2066,7 @@ class TimelineCanvas(QWidget):
             painter.drawText(
                 QRectF(control.left() + 23.0, control.top(), 63.0, control.height()),
                 Qt.AlignLeft | Qt.AlignVCenter,
-                trf("乐器组 ×{count}", count=group.count),
+                f"{_ui_bdo_instrument_name(group.instrument_id)} ×{group.count}",
             )
             painter.restore()
             mute_rect = QRectF(control.right() - 43.0, control.top() + 2.0, 20.0, 20.0)
@@ -2615,6 +2617,7 @@ class TimelineCanvas(QWidget):
             )
             title_width = max(0.0, title_right - title_left)
             painter.setPen(QColor("#ffedd4" if active else "#8a847d"))
+            instrument_name = track_identity.game_instrument_name(track, tr)
             title_text = (
                 trf(
                     "乐器组 · {instrument}",
@@ -2623,7 +2626,7 @@ class TimelineCanvas(QWidget):
                     ),
                 )
                 if collapsed_group is not None
-                else track.display_name
+                else track_identity.title(track, tr, compact_lane)
             )
             painter.drawText(
                 QRectF(title_left, y + 8, title_width, 24),
@@ -2643,7 +2646,7 @@ class TimelineCanvas(QWidget):
                     notes=collapsed_group.note_count,
                 )
             else:
-                metadata = trf(
+                note_metadata = trf(
                     "{count} 音符 · {pitch_range}",
                     count=(
                         len(index.intervals.items)
@@ -2655,6 +2658,7 @@ class TimelineCanvas(QWidget):
                         if index is not None and index.intervals.items else "-"
                     ),
                 )
+                metadata = f"BDO · {instrument_name} · {note_metadata}"
             metadata_font = painter.font()
             metadata_font.setPointSize(max(7, metadata_font.pointSize() - 1))
             painter.save()
@@ -3813,6 +3817,8 @@ class TimelineCanvas(QWidget):
             self._static_timeline_cache_key = cache_key
         painter.drawPixmap(0, 0, self._static_timeline_cache)
         self.hit_regions = list(self._static_timeline_hit_regions)
+        if not any(track.notes for track in self.tracks):
+            paint_empty_score_guidance(painter, self.grid_rect, tr)
         self.velocity_curve_overlay.begin_frame()
         self._paint_dynamic_track_overlays(
             painter,
@@ -4793,7 +4799,6 @@ class TimelineCanvas(QWidget):
                     action == "lane"
                     and isinstance(item, TrackState)
                     and rect.contains(pos)
-                    and self._track_validation_tooltip(item)
                 ):
                     hover_track = item
                     break
@@ -4803,7 +4808,10 @@ class TimelineCanvas(QWidget):
         if hover_track_id != self._validation_hover_track_id:
             self._validation_hover_track_id = hover_track_id
             self.setToolTip(
-                self._track_validation_tooltip(hover_track)
+                track_identity.tooltip(
+                    hover_track, tr,
+                    self._track_validation_tooltip(hover_track),
+                )
                 if hover_track is not None
                 else tr(self.KEYBOARD_SHORTCUT_HINT)
             )

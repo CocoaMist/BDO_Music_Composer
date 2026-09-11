@@ -11,9 +11,11 @@ from bdo_midi.instruments import (
     localized_gm_program_name,
 )
 from bdo_music_composer.core.conversion_settings import ConversionSettings
+from bdo_music_composer.app.game_profile_provider import get_bdo_profile
 from bdo_music_composer.editor.editor_import import (
     MidiImportData,
     MidiMeterReadError,
+    MidiNoNotesError,
     TrackImportPresentation,
     prepare_midi_import as _prepare_midi_import,
     read_midi_time_signature_denominator,
@@ -71,7 +73,23 @@ def prepare_midi_import(
     settings: ConversionSettings,
 ) -> MidiImportData:
     try:
-        return _prepare_midi_import(path, settings, TRACK_IMPORT_PRESENTATION)
+        profile = get_bdo_profile()
+
+        def pitch_support(instrument_id: int, pitch: int) -> bool:
+            rule = profile.instruments.get(int(instrument_id))
+            if rule is None:
+                return False
+            supported = rule.supports_pitch(int(pitch))
+            return supported is not False
+
+        return _prepare_midi_import(
+            path,
+            settings,
+            TRACK_IMPORT_PRESENTATION,
+            pitch_support=pitch_support,
+        )
+    except MidiNoNotesError as exc:
+        raise ValueError(tr("MIDI 中没有可导入的音符事件。")) from exc
     except MidiMeterReadError as exc:
         raise ValueError(
             trf("无法读取 MIDI 拍号，已阻止导出：{error}", error=exc)

@@ -7,7 +7,12 @@ import unittest
 
 from bdo_codec import MAX_NOTES_PER_TRACK
 from bdo_music_composer.core.bdo_profile import Evidence, LimitPolicy, load_bdo_profile
-from bdo_music_composer.export.bdo_validation import ValidationContext, validate_tracks
+from bdo_music_composer.export.bdo_validation import (
+    ValidationContext,
+    ValidationIssue,
+    validate_tracks,
+    validation_issue_disposition,
+)
 from optimization.plugin_api import OptimizationLimits
 from bdo_music_composer.core.project_paths import PROFILES_DIR
 from bdo_music_composer.editor.pitch_transform import PitchTransformPlan
@@ -30,6 +35,7 @@ class Track:
     articulation_type: int | None = None
     bdo_track_volume: int = 70
     bdo_track_settings: tuple[int, ...] = (0,) * 8
+    performance_controls: tuple[dict, ...] = ()
 
 
 class BdoProfileValidationTests(unittest.TestCase):
@@ -52,6 +58,7 @@ class BdoProfileValidationTests(unittest.TestCase):
             self.profile.note_limit_per_track,
             MAX_NOTES_PER_TRACK,
         )
+
         self.assertEqual(
             OptimizationLimits().export_track_note_limit,
             MAX_NOTES_PER_TRACK,
@@ -68,6 +75,46 @@ class BdoProfileValidationTests(unittest.TestCase):
         self.assertIn("runtime", instrument_limit.evidence.source)
         self.assertEqual(self.profile.drum_instrument_id, 13)
         self.assertEqual(self.profile.instruments[11].evidence.status, "verified")
+
+    def test_issue_handling_blocks_invalid_state_but_keeps_named_approximations(self) -> None:
+        self.assertEqual(
+            validation_issue_disposition(ValidationIssue(
+                "pitch.instrument_unsupported", "error", "bad pitch"
+            )),
+            "block",
+        )
+        self.assertEqual(
+            validation_issue_disposition(ValidationIssue(
+                "drum.unmapped", "error", "fallback"
+            )),
+            "approximate",
+        )
+        self.assertEqual(
+            validation_issue_disposition(ValidationIssue(
+                "pitch.range_unverified", "warning", "review"
+            )),
+            "quality_warning",
+        )
+
+    def test_import_plan_is_visible_as_explainable_validation_evidence(self) -> None:
+        track = Track(
+            1,
+            [Note(60, 90, 0.0, 100.0, 0)],
+            0x11,
+            performance_controls=({
+                "kind": "midi_source",
+                "source_program": 4,
+                "adaptation_disposition": "approximate",
+                "adaptation_reason": "program and pitch coverage",
+            },),
+        )
+        issue = next(
+            item for item in validate_tracks([track], self.profile, self.context([track]))
+            if item.code == "instrument.adaptation_approximate"
+        )
+        self.assertEqual(issue.severity, "info")
+        self.assertIn("Program 4", issue.message)
+        self.assertEqual(issue.evidence_status, "approximate")
 
     def test_game_ui_sparse_percussion_lanes_are_verified(self) -> None:
         hand_drum = self.profile.instruments[0x04]
@@ -160,13 +207,16 @@ class BdoProfileValidationTests(unittest.TestCase):
         self.assertFalse(any(item.severity == "error" for item in issues))
 
     def test_approximate_instrument_range_warns_without_hard_rejection(self) -> None:
+        rules = dict(self.profile.instruments)
+        rules[0x13] = replace(rules[0x13], evidence=Evidence("approximate", "test fixture"))
+        profile = replace(self.profile, instruments=rules)
         track = Track(
             6,
             [Note(44, 90, 0, 200, 0), Note(89, 90, 300, 200, 0)],
             0x13,
         )
 
-        issues = validate_tracks([track], self.profile, self.context([track]))
+        issues = validate_tracks([track], profile, self.context([track]))
 
         range_issue = next(
             item for item in issues if item.code == "pitch.range_unverified"
@@ -176,6 +226,17 @@ class BdoProfileValidationTests(unittest.TestCase):
         self.assertFalse(any(
             item.code == "pitch.instrument_unsupported" for item in issues
         ))
+
+    def test_verified_handpan_range_rejects_outside_notes_without_rewriting(self) -> None:
+        track = Track(6, [Note(p, 90, i * 300, 200, 0)
+                          for i, p in enumerate((44, 45, 88, 89))], 0x13)
+        issues = validate_tracks([track], self.profile, self.context([track]))
+        self.assertTrue(any(item.code == "pitch.instrument_unsupported"
+                            and item.severity == "error" for item in issues))
+        self.assertEqual([44, 45, 88, 89], [note.pitch for note in track.notes])
+        track.notes = track.notes[1:3]
+        issues = validate_tracks([track], self.profile, self.context([track]))
+        self.assertFalse(any(item.code.startswith("pitch.") for item in issues))
 
     def test_validator_blocks_unmapped_drums_and_capacity_loss(self) -> None:
         drums = Track(1, [Note(99, 90, 0, 100, 0)], 13, is_percussion=True)

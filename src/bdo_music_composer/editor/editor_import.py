@@ -15,13 +15,15 @@ import math
 from pathlib import Path
 from typing import Any
 
-import mido
-
 from bdo_midi import (
+    GmInstrumentPlan,
     MARNIAN_SYNTH_MODE_OFFSETS,
+    MidiCompatibilityRepair,
+    MidiGroupEvidence,
     Note,
-    gm_to_bdo_instrument,
+    load_midi_file,
     parse_midi,
+    plan_gm_to_bdo_instrument,
 )
 from bdo_common.bdo_track_effects import DEFAULT_TRACK_VOLUME, raw_track_settings
 from bdo_music_composer.core.conversion_settings import (
@@ -65,6 +67,10 @@ class MidiMeterReadError(ValueError):
     """Raised when the source meter cannot be inspected safely."""
 
 
+class MidiNoNotesError(ValueError):
+    """Raised before commit when a MIDI contains no playable note events."""
+
+
 @dataclass(frozen=True, slots=True)
 class TrackImportPresentation:
     """UI-owned names and colors used while constructing editor tracks."""
@@ -94,13 +100,17 @@ class MidiImportData:
     lyric_events: tuple[dict[str, Any], ...]
     tracks: tuple[TrackState, ...]
     conversion_settings: ConversionSettings
+    compatibility_repairs: tuple[MidiCompatibilityRepair, ...] = ()
 
 
 def read_midi_time_signature_denominator(midi_path: str | Path) -> int:
     """Return the first declared MIDI meter denominator, defaulting to ``/4``."""
 
     try:
-        midi = mido.MidiFile(str(midi_path), clip=True)
+        midi, _repairs = load_midi_file(
+            midi_path,
+            allow_compatibility_repairs=True,
+        )
         for midi_track in midi.tracks:
             for message in midi_track:
                 if message.type == "time_signature":
@@ -927,50 +937,139 @@ def tracks_from_project_payload(
     return tuple(states)
 
 
+def _midi_source_metadata(
+    evidence: MidiGroupEvidence,
+    instrument_plan: GmInstrumentPlan,
+) -> dict[str, object]:
+    source_labels = tuple(dict.fromkeys((
+        *evidence.track_names,
+        *evidence.instrument_names,
+    )))
+    identity_suffix = (
+        f"; Bank {evidence.bank_msb}:{evidence.bank_lsb}; "
+        f"dialect {evidence.midi_dialect}"
+        + (f"; source {', '.join(source_labels)}" if source_labels else "")
+    )
+    return {
+            "kind": "midi_source",
+            "time": 0.0,
+            "channel": int(evidence.channel),
+            "source_program": int(evidence.source_program),
+            "bank_msb": int(evidence.bank_msb),
+            "bank_lsb": int(evidence.bank_lsb),
+            "midi_dialect": str(evidence.midi_dialect),
+            "source_track_indices": list(evidence.source_track_indices),
+            "track_names": list(evidence.track_names),
+            "instrument_names": list(evidence.instrument_names),
+            "selected_bdo_instrument_id": int(instrument_plan.instrument_id),
+            "selected_marnian_mode": str(instrument_plan.marnian_mode),
+            "adaptation_disposition": str(instrument_plan.disposition),
+            "adaptation_reason": str(instrument_plan.reason) + identity_suffix,
+            "articulation_policy": "preserve_controls_suggest_only",
+            "candidates": [
+                {
+                    "instrument_id": int(candidate.instrument_id),
+                    "marnian_mode": str(candidate.marnian_mode),
+                    "score": float(candidate.score),
+                    "pitch_coverage": float(candidate.pitch_coverage),
+                    "reason": str(candidate.reason),
+                }
+                for candidate in instrument_plan.candidates
+            ],
+        }
+
+
+def _midi_track_state(
+    index: int,
+    group: tuple[list[Note], int, bool],
+    controls: Sequence[Sequence[Mapping]],
+    evidence_items: Sequence[MidiGroupEvidence],
+    settings: ConversionSettings,
+    presentation: TrackImportPresentation,
+    pitch_support: Callable[[int, int], bool] | None,
+) -> TrackState:
+    notes, gm_program, is_percussion = group
+    game_notes = list(bake_game_velocity_transform(notes, settings))
+    evidence = (
+        evidence_items[index]
+        if index < len(evidence_items)
+        and isinstance(evidence_items[index], MidiGroupEvidence)
+        else MidiGroupEvidence(
+            channel=9 if is_percussion else 0,
+            source_program=int(gm_program),
+        )
+    )
+    instrument_plan = plan_gm_to_bdo_instrument(
+        evidence.source_program,
+        is_percussion,
+        pitches=tuple(int(note.pitch) for note in game_notes),
+        pitch_support=pitch_support,
+    )
+    source_name = next((
+        name.strip()
+        for name in (*evidence.track_names, *evidence.instrument_names)
+        if name.strip()
+    ), "")
+    source_metadata = _midi_source_metadata(evidence, instrument_plan)
+    source_controls = (
+        [dict(control) for control in controls[index]]
+        if index < len(controls)
+        else []
+    )
+    return TrackState(
+        track_id=index,
+        notes=game_notes,
+        gm_program=gm_program,
+        is_percussion=is_percussion,
+        display_name=(source_name or (
+            presentation.drum_track_name()
+            if is_percussion else presentation.gm_program_name(gm_program)
+        )),
+        bdo_instrument_id=instrument_plan.instrument_id,
+        color=presentation.color(index),
+        effect_settings_placeholder={
+            "track_effects_enabled": False,
+            "note_effects_reserved": True,
+        },
+        performance_controls=[source_metadata, *source_controls],
+        marnian_synth_mode=instrument_plan.marnian_mode,
+    )
+
+
 def prepare_midi_import(
     path: str | Path,
     settings: ConversionSettings,
     presentation: TrackImportPresentation,
+    *,
+    pitch_support: Callable[[int, int], bool] | None = None,
 ) -> MidiImportData:
     """Parse and transform a MIDI without touching the open editor project."""
 
-    bpm, time_signature, groups, tempo_changes, controls, lyric_events = (
-        parse_midi(
-            path,
-            apply_sustain=settings.apply_sustain,
-            flatten_tempo=settings.flatten_tempo,
-            include_controls=True,
-            include_lyrics=True,
-        )
+    parsed = parse_midi(
+        path,
+        apply_sustain=settings.apply_sustain,
+        flatten_tempo=settings.flatten_tempo,
+        include_controls=True,
+        include_lyrics=True,
+        include_group_evidence=True,
+        include_compatibility_repairs=True,
+        allow_compatibility_repairs=True,
+        require_quarter_denominator=False,
     )
-    tracks: list[TrackState] = []
-    for index, (notes, gm_program, is_percussion) in enumerate(groups):
-        game_notes = list(bake_game_velocity_transform(notes, settings))
-        tracks.append(TrackState(
-            track_id=index,
-            notes=game_notes,
-            gm_program=gm_program,
-            is_percussion=is_percussion,
-            display_name=(
-                presentation.drum_track_name()
-                if is_percussion
-                else presentation.gm_program_name(gm_program)
-            ),
-            bdo_instrument_id=gm_to_bdo_instrument(
-                gm_program,
-                is_percussion,
-            ),
-            color=presentation.color(index),
-            effect_settings_placeholder={
-                "track_effects_enabled": False,
-                "note_effects_reserved": True,
-            },
-            performance_controls=(
-                [dict(control) for control in controls[index]]
-                if index < len(controls)
-                else []
-            ),
-        ))
+    (
+        bpm, time_signature, groups, tempo_changes, controls, lyric_events,
+        group_evidence,
+    ) = parsed[:7]
+    compatibility_repairs = parsed[7] if len(parsed) > 7 else ()
+    tracks = tuple(
+        _midi_track_state(
+            index, group, controls, group_evidence, settings, presentation,
+            pitch_support,
+        )
+        for index, group in enumerate(groups)
+    )
+    if not tracks:
+        raise MidiNoNotesError("MIDI contains no playable note events")
     return MidiImportData(
         bpm=int(bpm),
         time_signature=int(time_signature),
@@ -979,12 +1078,13 @@ def prepare_midi_import(
         lyric_events=tuple(
             dict(event) for event in lyric_events if isinstance(event, Mapping)
         ),
-        tracks=tuple(tracks),
+        tracks=tracks,
         # Velocity policies are now visible note data and cannot run again at
         # export time.
         conversion_settings=settings.with_updates(
             velocity_mode=VELOCITY_MODE_PRESERVE
         ),
+        compatibility_repairs=tuple(compatibility_repairs),
     )
 
 
@@ -993,6 +1093,7 @@ __all__ = [
     "EditorImportErrorCode",
     "MidiImportData",
     "MidiMeterReadError",
+    "MidiNoNotesError",
     "TrackImportPresentation",
     "prepare_midi_import",
     "read_midi_time_signature_denominator",

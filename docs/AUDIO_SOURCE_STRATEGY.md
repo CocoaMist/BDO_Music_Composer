@@ -70,6 +70,11 @@ must never enter a project or BDO score.
 
 ## BDO to General MIDI preview map
 
+The built-in procedural preview keeps the full MIDI 0–127 frequency mapping.
+Its A4-based playback ratio is not clipped to three octaves: the former
+0.125–8 clamp silently changed notes outside MIDI 33–105. This is a preview
+correctness rule, not a game-instrument transposition or export compensation.
+
 The executable-independent policy lives in `src/bdo_midi/gm_preview.py`. Program
 numbers below are zero-based, matching SoundFont APIs. Beginner and Florchestra
 variants share a GM preset where General MIDI has no honest way to distinguish

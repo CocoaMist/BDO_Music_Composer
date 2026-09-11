@@ -114,6 +114,40 @@ class ProceduralPreviewTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].gain, 0.0)
 
+    def test_generic_preview_preserves_all_midi_keys(self) -> None:
+        engine = BdoRealtimeAudioEngine(None, {})
+        notes = [Note(pitch, 90, pitch * 100.0, 80.0, 0) for pitch in range(128)]
+        events, cache, *_rest = engine._prepare_procedural_project(
+            [track_with(notes)], 0.0, 0, 0, None,
+        )
+        self.assertEqual(len(events), 128)
+        self.assertEqual(len(cache), 1)
+        for pitch, event in enumerate(events):
+            with self.subTest(pitch=pitch):
+                self.assertAlmostEqual(69.0 + 12.0 * np.log2(event.ratio), pitch)
+
+    def test_low_and_high_notes_render_at_the_authored_frequency(self) -> None:
+        for pitch in (21, 117):
+            with self.subTest(pitch=pitch):
+                engine = BdoRealtimeAudioEngine(None, {})
+                try:
+                    prepared = engine._prepare_procedural_project(
+                        [track_with([Note(pitch, 90, 0.0, 2500.0, 0)])],
+                        0.0, 0, 0, None,
+                    )
+                    engine._commit_project(*prepared, start_ms=0.0)
+                    engine._playing = True
+                    blocks = [engine._render_locked(512).copy() for _ in range(188)]
+                    signal = np.concatenate(blocks).mean(axis=1)
+                    signal = signal[round(engine._sample_rate * 0.25):]
+                    spectrum = np.abs(np.fft.rfft(signal * np.hanning(len(signal))))
+                    frequencies = np.fft.rfftfreq(len(signal), 1.0 / engine._sample_rate)
+                    measured_hz = float(frequencies[int(np.argmax(spectrum))])
+                    expected_hz = 440.0 * 2.0 ** ((pitch - 69) / 12.0)
+                    self.assertAlmostEqual(measured_hz, expected_hz, delta=1.0)
+                finally:
+                    engine.stop()
+
     def test_retired_hidden_velocity_scale_does_not_change_preview(self) -> None:
         engine = BdoRealtimeAudioEngine(None, {})
         track = track_with([Note(60, 100, 0.0, 100.0, 0)])

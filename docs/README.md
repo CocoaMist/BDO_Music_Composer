@@ -23,6 +23,7 @@
 - **编辑器与游戏证据：** [作曲界面](BDO_COMPOSITION_AUTHORING.md)、
   [混音效果](BDO_MIXER_EFFECTS.md)、[乐器适配](INSTRUMENT_EDITOR_ADAPTATION.md)、
   [打击乐卷帘](PERCUSSION_ROLL_EVALUATION.md)。
+- **发声音高：** [导出后八度偏差检查](INSTRUMENT_PITCH_REVIEW.md)区分导出键号、音源发声和游戏验证。
 - **乐理与奏法：** [BDO 奏法规则](BDO_ARTICULATION_RULES.md)、
   [通用乐器奏法](INSTRUMENT_ARTICULATION_GUIDE.md)、[MIDI 奏法模型](MIDI_TECHNIQUE_MODEL.md)、
   [乐理知识库](MUSIC_THEORY_KNOWLEDGE_BASE.md)。

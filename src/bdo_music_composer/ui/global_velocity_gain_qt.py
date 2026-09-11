@@ -233,7 +233,7 @@ class GlobalVelocityGainHostMixin:
         scope = self.timeline.selection_scope if hasattr(self, "timeline") else "none"
         if scope == "clip" and items:
             primary_clip = clip_by_id(items[0][0], items[0][1])
-            primary_name = str(primary_clip.display_name or items[0][1])
+            primary_name = str(primary_clip.display_name).strip() or tr("所选片段")
             label = (
                 trf("作用域：Clip · {name}", name=primary_name)
                 if len(items) == 1
@@ -534,7 +534,7 @@ class GlobalVelocityGainHostMixin:
         primary = clip_by_id(items[0][0], items[0][1])
         dialog = ClipVelocityBaseDialog(
             self,
-            str(primary.display_name or primary.clip_id),
+            str(primary.display_name).strip() or tr("所选片段"),
             len(items),
         )
         if dialog.exec() != QDialog.Accepted:

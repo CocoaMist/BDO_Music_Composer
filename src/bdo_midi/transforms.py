@@ -12,6 +12,7 @@ from .model import Note
 DRUM_NOTE_TYPE = 99
 DRUM_NOTE_MAX_DURATION_MS = 80.0
 DRUM_ROLL_PITCHES = frozenset({63, 64})
+DRUM_UNMAPPED_FALLBACK_PITCH = 50
 BDO_VEL_LEVELS = (80, 90, 100, 121)
 
 
@@ -37,7 +38,26 @@ def transpose_notes(notes: Iterable[Note], semitones: int) -> list[Note]:
     return [note._replace(pitch=note.pitch + semitones) for note in notes]
 
 
-def map_drum_notes(notes: Iterable[Note]) -> list[Note]:
+def map_drum_notes(
+    notes: Iterable[Note],
+    *,
+    unmapped_fallback_pitch: int | None = None,
+) -> list[Note]:
+    """Project GM percussion into BDO's canonical 48..64 drum lanes.
+
+    The default remains strict so callers cannot silently claim an exact GM
+    mapping. Export callers may pass an explicit canonical fallback after the
+    UI has already surfaced the unmapped-key diagnostic to the user.
+    """
+
+    fallback_pitch = None
+    if unmapped_fallback_pitch is not None:
+        fallback_pitch = bounded_int(
+            unmapped_fallback_pitch,
+            48,
+            64,
+            "unmapped drum fallback pitch",
+        )
     result: list[Note] = []
     for note in notes:
         already_canonical = note.ntype == DRUM_NOTE_TYPE and 48 <= note.pitch <= 64
@@ -47,9 +67,12 @@ def map_drum_notes(notes: Iterable[Note]) -> list[Note]:
             try:
                 pitch = _GM_TO_BDO_DRUM[note.pitch]
             except KeyError as exc:
-                raise ValueError(
-                    f"General MIDI drum pitch {note.pitch} has no BDO mapping"
-                ) from exc
+                if fallback_pitch is not None:
+                    pitch = fallback_pitch
+                else:
+                    raise ValueError(
+                        f"General MIDI drum pitch {note.pitch} has no BDO mapping"
+                    ) from exc
         duration = note.dur if pitch in DRUM_ROLL_PITCHES else min(note.dur, DRUM_NOTE_MAX_DURATION_MS)
         # Preserve adapter-owned fields such as BDO velocity B while keeping
         # the public five-field ``Note`` wire shape unchanged.
@@ -155,6 +178,7 @@ def layered_velocity(
 
 __all__ = [
     "BDO_VEL_LEVELS", "DRUM_NOTE_MAX_DURATION_MS", "DRUM_NOTE_TYPE",
+    "DRUM_UNMAPPED_FALLBACK_PITCH",
     "DRUM_ROLL_PITCHES", "bounded_int", "bounded_velocity", "clamp_notes",
     "floor_velocity", "layered_velocity", "map_drum_notes",
     "normalize_drum_note_timing", "rescale_velocity", "stepped_velocity",

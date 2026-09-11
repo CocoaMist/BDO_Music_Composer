@@ -241,6 +241,9 @@ class EditorShortcutHudTests(unittest.TestCase):
                 for key, action in help_copy
             )
             assert any("Ctrl+Shift+↑" in key for key, _action in help_copy)
+            QTest.keyClick(help_dialog, Qt.Key_Escape)
+            app.processEvents()
+            assert not help_dialog.isVisible()
             help_dialog.close()
             editor.activateWindow()
             editor.pitch_edit.setFocus()

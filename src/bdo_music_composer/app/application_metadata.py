@@ -9,8 +9,8 @@ from __future__ import annotations
 
 
 APP_NAME = "BDO Music Composer"
-APP_VERSION = "1.3.6"
-APP_DISPLAY_VERSION = "1.3.6"
+APP_VERSION = "1.3.6.2"
+APP_DISPLAY_VERSION = "1.3.6.2"
 WINDOWS_APP_USER_MODEL_ID = "CocoaMist.BDOMusicComposer.1"
 
 # The implementation and catalog remain available for internal validation.

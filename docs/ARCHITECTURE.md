@@ -348,7 +348,17 @@ signature, and EXE bytes and are transport mirrors rather than trust roots.
 after a 25-second UI delay and at most once per 24 hours. It checks Gitee then
 GitHub (or the last successful/preferred mirror), follows only allow-listed
 HTTPS redirects, bounds channel responses, streams the EXE to Local AppData,
-and verifies size and SHA-256 before recording it as ready. Source runs and
+and verifies size and SHA-256 before recording it as ready. Interrupted artifact
+downloads retain a bounded `.part` file; a second attempt or the other signed
+mirror resumes only after an exact HTTP Content-Range check, while a server that
+ignores Range restarts the file instead of appending. Download and installation
+volumes must each retain the artifact bytes plus a fixed safety reserve. Startup
+cleanup removes terminal or seven-day orphan staging directories, but preserves
+the exact schema-validated ready directory and any installed update awaiting
+health confirmation; symlinks and Windows junctions are never traversed.
+Successful checks retain the 24-hour cadence; a transient failure becomes
+eligible for another background attempt after one hour.
+Source runs and
 `BDO_STARTUP_SELF_TEST` cannot start this transport. A normal close never
 reopens the app. On the user's next launch the old EXE starts the staged new EXE
 with `--apply-update-v1` and exits; the new EXE copies itself beside the target,
@@ -395,6 +405,28 @@ conflicts fail closed and require the explicit “use this track to unify” act
 3. `bdo_music_composer.editor.editor_import.prepare_midi_import()` calls `bdo_midi.parse_midi()`, applies
    the visible game-velocity policy, and builds a complete immutable import
    result without touching the open project.
+   MIDI loading is strict by default. The editor import explicitly enables the
+   bounded compatibility owner in `bdo_midi.compatibility` only after strict
+   parsing reports an out-of-range channel data byte. That owner repairs only
+   a safely identifiable terminal value/velocity byte in an in-memory copy,
+   caps compatibility input at 64 MiB, reparses strictly, and returns a typed
+   repair report for the UI. The original file is never overwritten; ambiguous
+   data positions, truncated chunks, and other structural defects still fail
+   closed. Non-`/4` meters may enter the editor with their denominator retained,
+   while the existing export gate continues to block an invalid BDO v9 write.
+   A MIDI with no playable notes is rejected before the open project is changed.
+   The parser keeps each sounding group’s source program, Bank Select MSB/LSB,
+   source-track indexes/names, instrument names, channel-10 kit program, and
+   recognized GM/GM2/GS/XG reset dialect. `plan_gm_to_bdo_instrument()` ranks a
+   small BDO candidate set for every GM program, lets known pitch coverage
+   outrank a timbre-only guess, and selects the Marnian mode where applicable.
+   The selected plan and alternatives are stored as a JSON-safe `midi_source`
+   control event in `TrackState.performance_controls`, so project round trips
+   retain the import evidence without changing the `Note` wire shape. Unknown
+   control kinds are metadata only and are not emitted by the preview writer.
+   Imported CC, pitch-wheel, and aftertouch events remain evidence/optimizer
+   input; BDO export does not claim they are game articulations until a verified
+   materialization rule converts them into visible note or track state.
 4. BDO snapshots use the same adapter module and fail closed with a stable code
    and payload path instead of returning partial tracks. UI-owned names and
    colors are injected through `TrackImportPresentation`.
@@ -570,6 +602,11 @@ with private Owner/name fields excluded from comparison unless explicitly reques
 Track-local issues carry `track_id`; merge, conflicting-volume/effect, and
 instrument-capacity issues carry `related_track_ids`. UI consumers must use those
 structured IDs rather than parsing translated track names from messages.
+The UI classifies each issue by handling policy. Invalid bytes, unknown
+instruments, known instrument-range failures, illegal articulations, and shared
+mixer conflicts block before an export request is built. Explicitly implemented
+lossy projections such as wire-range pitch clamping and the confirmed fallback
+for an unmapped GM drum remain opt-in approximations and require confirmation.
 `src/bdo_codec/` owns lossless decoding, the reversible document model, canonical
 encoding, ICE, opaque-data safety, and the CLI. See `docs/BDO_V9_CODEC.md`.
 
@@ -1218,7 +1255,12 @@ account limit; the native composition UI receives `noteCount` dynamically.
   active-draft checkpoint; inactive sibling Clip editors publish by identity
   through the same path. Transient writer failures retry the
   same immutable request up to three times, while a newer pending request takes
-  precedence. Final window close drains the last writer.
+  precedence. Final window close drains the last writer, including a formal
+  snapshot queued when an ordinary editor discards its recovery draft. Failed
+  snapshot capture or exhausted disk-write retries keep the window and model
+  open; another explicit close captures and retries the latest state. Deleting
+  the final Track persists an empty snapshot for the existing project, while
+  an untouched home window creates no autosave project.
 - Personal/game files are never bundled.
 - `BDOMusicComposer.spec` is the sole Windows packaging boundary. It includes
   the Basic Pitch `nmp.onnx` model, ONNX Runtime CPU native libraries, required

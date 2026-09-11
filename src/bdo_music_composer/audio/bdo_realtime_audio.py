@@ -1407,7 +1407,9 @@ class BdoRealtimeAudioEngine(QObject):
                 else:
                     assert sample is not None
                     pitch = max(0, min(127, int(getattr(note, "pitch", 69))))
-                    ratio = max(0.125, min(8.0, 2.0 ** ((pitch - 69) / 12.0)))
+                    # The bounded MIDI key already bounds the ratio. Clipping
+                    # it to three octaves silently repitched low/high notes.
+                    ratio = 2.0 ** ((pitch - 69) / 12.0)
                     if family in {"piano", "pluck", "harp", "handpan"}:
                         audible_frames = min(
                             note_duration + release_frames,

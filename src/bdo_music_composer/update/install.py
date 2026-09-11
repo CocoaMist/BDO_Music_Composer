@@ -20,6 +20,7 @@ from bdo_music_composer.app.application_metadata import (
 )
 from bdo_music_composer.core.project_paths import USER_DATA_DIR
 from bdo_music_composer.update.manifest import EXPECTED_EXECUTABLE_NAME
+from bdo_music_composer.update.storage import has_sufficient_update_space
 
 
 APPLY_UPDATE_ARGUMENT = "--apply-update-v1"
@@ -32,6 +33,7 @@ STATE_NAME = "update-state-v1.json"
 READY_NAME = "ready-update-v1.json"
 HEALTH_TIMEOUT_SECONDS = 45.0
 MAX_PLAN_BYTES = 32 * 1024
+CACHE_RETENTION_SECONDS = 7 * 24 * 60 * 60
 
 
 class UpdateInstallError(RuntimeError):
@@ -120,6 +122,41 @@ def record_ready_update(
     return ready_path
 
 
+def _load_ready_update(
+    ready_path: Path,
+    update_root: Path,
+) -> tuple[dict[str, Any], Path]:
+    ready = _load_json_object(ready_path)
+    if set(ready) != {
+        "schema_version", "app_id", "protocol", "version", "sha256",
+        "staged_executable",
+    } or (
+        ready["schema_version"] != 1
+        or ready["app_id"] != UPDATE_APP_ID
+        or ready["protocol"] != UPDATE_PROTOCOL_VERSION
+        or not isinstance(ready["sha256"], str)
+        or len(ready["sha256"]) != 64
+        or any(character not in "0123456789abcdef" for character in ready["sha256"])
+    ):
+        raise UpdateInstallError("prepared update schema is invalid")
+    from bdo_music_composer.app.update_check import SemanticVersion
+
+    try:
+        ready_version = SemanticVersion.parse(ready["version"])
+    except (TypeError, ValueError) as exc:
+        raise UpdateInstallError("prepared update version is invalid") from exc
+    if ready_version.prerelease:
+        raise UpdateInstallError("prepared update version is invalid")
+    staged = Path(str(ready["staged_executable"])).resolve(strict=True)
+    if staged.name != EXPECTED_EXECUTABLE_NAME:
+        raise UpdateInstallError("prepared update executable is invalid")
+    try:
+        staged.relative_to(update_root.resolve(strict=True))
+    except ValueError as exc:
+        raise UpdateInstallError("prepared update is outside update storage") from exc
+    return ready, staged
+
+
 def launch_ready_update_on_startup() -> bool:
     """Hand a prepared update to its own updater mode before GUI startup."""
 
@@ -129,22 +166,13 @@ def launch_ready_update_on_startup() -> bool:
     if not ready_path.is_file():
         return False
     try:
-        ready = _load_json_object(ready_path)
-        if set(ready) != {
-            "schema_version", "app_id", "protocol", "version", "sha256", "staged_executable",
-        } or (
-            ready["schema_version"] != 1
-            or ready["app_id"] != UPDATE_APP_ID
-            or ready["protocol"] != UPDATE_PROTOCOL_VERSION
-        ):
-            raise UpdateInstallError("prepared update schema is invalid")
+        ready, staged = _load_ready_update(ready_path, UPDATE_ROOT)
         from bdo_music_composer.app.application_metadata import APP_VERSION
         from bdo_music_composer.app.update_check import SemanticVersion
 
         if SemanticVersion.parse(str(ready["version"])) <= SemanticVersion.parse(APP_VERSION):
             ready_path.unlink(missing_ok=True)
             return False
-        staged = Path(str(ready["staged_executable"])).resolve(strict=True)
         plan_path, token = create_install_plan(
             staged,
             version=str(ready["version"]),
@@ -156,6 +184,7 @@ def launch_ready_update_on_startup() -> bool:
         )
         return True
     except (OSError, ValueError, UpdateInstallError):
+        ready_path.unlink(missing_ok=True)
         return False
 
 
@@ -268,6 +297,8 @@ def apply_update_plan(
     if backup.exists():
         raise UpdateInstallError("an earlier update backup still exists")
     try:
+        if not has_sufficient_update_space(target.parent, staged.stat().st_size):
+            raise UpdateInstallError("insufficient disk space for update installation")
         shutil.copy2(staged, pending)
         with pending.open("rb+") as stream:
             os.fsync(stream.fileno())
@@ -327,7 +358,7 @@ def apply_update_plan(
         atomic_write_json(state_path, _state_payload(plan, "rolled_back"))
         subprocess.Popen([str(target)], close_fds=True)
         return 2
-    except OSError:
+    except (OSError, UpdateInstallError):
         if backup.is_file():
             target.unlink(missing_ok=True)
             try:
@@ -335,7 +366,7 @@ def apply_update_plan(
             except OSError:
                 pass
         (UPDATE_ROOT / READY_NAME).unlink(missing_ok=True)
-        if target.is_file():
+        if launch and target.is_file():
             try:
                 subprocess.Popen([str(target)], close_fds=True)
             except OSError:
@@ -367,31 +398,90 @@ def confirm_post_update(state_path: str | Path, token: str) -> bool:
     return True
 
 
+def _safe_cache_directory(update_root: Path, candidate: Path) -> Path | None:
+    try:
+        is_junction = getattr(candidate, "is_junction", lambda: False)
+        if candidate.is_symlink() or is_junction() or not candidate.is_dir():
+            return None
+        root = update_root.resolve(strict=True)
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root)
+        if resolved.parent != root:
+            return None
+        return resolved
+    except (OSError, ValueError):
+        return None
+
+
+def _safe_cache_entries(cache_directory: Path) -> tuple[Path, ...] | None:
+    try:
+        entries = tuple(cache_directory.iterdir())
+        for entry in entries:
+            is_junction = getattr(entry, "is_junction", lambda: False)
+            if entry.is_symlink() or is_junction() or not entry.is_file():
+                return None
+        return entries
+    except OSError:
+        return None
+
+
 def cleanup_committed_updates(root: str | Path = UPDATE_ROOT) -> None:
     update_root = Path(root)
     if not update_root.is_dir():
         return
+    protected_directory: Path | None = None
+    ready_path = update_root / READY_NAME
+    if ready_path.is_file():
+        try:
+            _ready, staged = _load_ready_update(ready_path, update_root)
+            protected_directory = staged.parent
+        except (OSError, ValueError, UpdateInstallError):
+            ready_path.unlink(missing_ok=True)
+
     for state_path in update_root.glob(f"*/{STATE_NAME}"):
+        cache_directory = _safe_cache_directory(update_root, state_path.parent)
+        if cache_directory is None or _safe_cache_entries(cache_directory) is None:
+            continue
         try:
             state = _load_json_object(state_path)
             if state.get("status") not in {"committed", "rolled_back"}:
                 continue
-            shutil.rmtree(state_path.parent)
+            shutil.rmtree(cache_directory)
         except (OSError, UpdateInstallError):
             continue
-    ready_path = update_root / READY_NAME
-    if ready_path.is_file():
+
+    cutoff = time.time() - CACHE_RETENTION_SECONDS
+    for child in update_root.iterdir():
+        resolved = _safe_cache_directory(update_root, child)
+        if resolved is None:
+            continue
         try:
-            ready = _load_json_object(ready_path)
-            staged = Path(str(ready.get("staged_executable", "")))
-            if not staged.is_file():
-                ready_path.unlink(missing_ok=True)
+            if protected_directory is not None and resolved == protected_directory:
+                continue
+            state_path = child / STATE_NAME
+            if state_path.is_file():
+                try:
+                    state = _load_json_object(state_path)
+                except UpdateInstallError:
+                    state = {}
+                if state.get("status") == "installed":
+                    continue
+            entries = _safe_cache_entries(resolved)
+            if entries is None:
+                continue
+            newest_mtime = max(
+                (entry.lstat().st_mtime for entry in entries),
+                default=child.stat().st_mtime,
+            )
+            if newest_mtime < cutoff:
+                shutil.rmtree(child)
         except (OSError, UpdateInstallError):
-            pass
+            continue
 
 
 __all__ = [
     "APPLY_UPDATE_ARGUMENT",
+    "CACHE_RETENTION_SECONDS",
     "POST_UPDATE_ARGUMENT",
     "POST_UPDATE_STATE_ENVIRONMENT",
     "POST_UPDATE_TOKEN_ENVIRONMENT",

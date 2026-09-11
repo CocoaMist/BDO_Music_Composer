@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import soundfile
@@ -33,8 +34,16 @@ class ReferenceTempoTests(unittest.TestCase):
         self.assertLessEqual(estimate.tempo_drift_ratio, 0.12)
 
     def test_cancelled_estimate_does_not_decode(self) -> None:
-        with self.assertRaises(ReferenceTempoError):
-            estimate_reference_tempo("unused.wav", cancelled=lambda: True)
+        with patch("builtins.__import__", side_effect=AssertionError("must not import DSP")):
+            with self.assertRaises(ReferenceTempoError):
+                estimate_reference_tempo("unused.wav", cancelled=lambda: True)
+
+    def test_missing_file_does_not_import_audio_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            missing = Path(folder) / "missing.wav"
+            with patch("builtins.__import__", side_effect=AssertionError("must not import DSP")):
+                with self.assertRaisesRegex(ReferenceTempoError, "file is missing"):
+                    estimate_reference_tempo(missing)
 
 
 if __name__ == "__main__":

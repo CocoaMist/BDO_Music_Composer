@@ -45,7 +45,9 @@ class SelectionVelocityPercentUiTests(unittest.TestCase):
             window.timeline.set_selected_clip(first, "a")
             assert window.timeline.selection_scope == "clip"
             assert window.timeline.selected_track is first
-            assert window.toolbar_velocity_scope.text() == "作用域：Clip · a"
+            assert window.toolbar_velocity_scope.text() == "作用域：Clip · 所选片段"
+            assert "track-" not in window.toolbar_velocity_scope.text()
+            assert "clip-" not in window.toolbar_velocity_scope.text()
             window._begin_selection_velocity_percent()
             window._preview_selection_velocity_percent(140)
             window._commit_selection_velocity_percent()

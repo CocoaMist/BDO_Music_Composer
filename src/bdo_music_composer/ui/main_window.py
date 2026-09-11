@@ -166,6 +166,7 @@ from bdo_music_composer.export.bdo_validation import (  # noqa: E402
     ValidationIssue,
     evidence_status_source,
     issues_report,
+    validation_issue_disposition,
     validate_tracks,
 )
 from bdo_music_composer.project.project_schema import (  # noqa: E402
@@ -1130,6 +1131,7 @@ class MidiToBdoWindow(
         self.pending_autosave_request: AutosaveRequest | None = None
         self._autosave_retry_request: AutosaveRequest | None = None
         self._autosave_retry_count = 0
+        self._autosave_error = ""
         saved_settings = self.config.get("conversion_settings", {})
         if not isinstance(saved_settings, dict):
             saved_settings = {}
@@ -2002,7 +2004,11 @@ class MidiToBdoWindow(
         self.home_outer_layout.setContentsMargins(0, 0, 0, 0)
         self.home_shell_layout.setSpacing(0)
         width = self.width()
-        sidebar_width = max(560, min(760, round(width * 0.45)))
+        # Returning users spend most of their time in the library, so supported
+        # laptop widths give the actionable surface priority over the artwork.
+        # Wide displays retain the restrained showcase treatment.
+        sidebar_ratio = 0.55 if width < 1440 else 0.45
+        sidebar_width = max(600, min(760, round(width * sidebar_ratio)))
         self.home_sidebar.setFixedWidth(sidebar_width)
 
     @staticmethod
@@ -5493,13 +5499,26 @@ class MidiToBdoWindow(
         self._schedule_timeline_validation_refresh()
         self._record_recent("midi", path, path.stem)
         self._show_workspace()
-        self.status_label.setText(tr("MIDI 已载入"))
-        self.inspector_text.clear()
-        self.show_toast(
-            tr("MIDI 已载入，可在多音轨中继续编辑。"),
-            kind="success",
-            duration_ms=2800,
+        repair_count = sum(
+            int(repair.count)
+            for repair in getattr(self, "_last_midi_import_repairs", ())
         )
+        if repair_count:
+            notice = trf(
+                "MIDI 已载入 · 已兼容修复 {count} 个越界数据值；原文件未修改",
+                count=repair_count,
+            )
+            self.status_label.setText(notice)
+            self.inspector_text.setText(notice)
+            self.show_toast(notice, kind="warning", duration_ms=5200)
+        else:
+            self.status_label.setText(tr("MIDI 已载入"))
+            self.inspector_text.clear()
+            self.show_toast(
+                tr("MIDI 已载入，可在多音轨中继续编辑。"),
+                kind="success",
+                duration_ms=2800,
+            )
 
     def _open_bdo_score_path(self, path: Path) -> None:
         if not self._load_bdo_info(path):
@@ -6054,10 +6073,11 @@ class MidiToBdoWindow(
         self.pending_autosave_reason = ""
         if (
             self.loading_project
-            or not self.tracks
+            or (not self.tracks and self.autosave_project_dir is None)
         ):
             return False
         try:
+            self._autosave_error = ""
             source_path, source_copy = self._ensure_autosave_project()
             if self.autosave_project_dir is None:
                 return False
@@ -6114,6 +6134,7 @@ class MidiToBdoWindow(
             return True
         except Exception as exc:
             append_crash_log("Autosave failed", traceback.format_exc())
+            self._autosave_error = str(exc) or type(exc).__name__
             self.status_label.setText(trf("自动保存失败：{error}", error=exc))
             return False
 
@@ -6495,6 +6516,7 @@ class MidiToBdoWindow(
         conversion_settings: ConversionSettings | None = None,
     ) -> bool:
         settings = conversion_settings or self._conversion_settings
+        self._last_midi_import_repairs = ()
         try:
             imported = prepare_midi_import(path, settings)
         except Exception as exc:
@@ -6533,6 +6555,9 @@ class MidiToBdoWindow(
         self.tempo_changes = imported.tempo_changes
         self.lyric_events = list(imported.lyric_events)
         self.tracks = list(imported.tracks)
+        self._last_midi_import_repairs = tuple(
+            imported.compatibility_repairs
+        )
         self._set_conversion_settings(
             imported.conversion_settings,
             preserve_pitch_overrides=False,
@@ -6704,6 +6729,9 @@ class MidiToBdoWindow(
             )
             return
         self._apply_workspace_change(ModelChange.structure())
+        for editor in tuple(self._note_editors.values()):
+            if int(editor.track.track_id) == int(track.track_id):
+                editor.refresh_game_instrument_identity(next_instrument_id)
         self._select_track(track)
         self._refresh_transcription_workspace()
         self._schedule_timeline_validation_refresh()
@@ -6832,11 +6860,12 @@ class MidiToBdoWindow(
         if self.timeline.selected_track is not track:
             self.timeline.set_selected_track(track)
         if hasattr(self, "project_note_status"):
-            self.project_note_status.setText(trf(
-                "{track} · {count} 个音符",
-                track=track.display_name,
-                count=track.note_count,
-            ))
+            note_summary = trf("{count} 个音符", count=track.note_count)
+            self.project_note_status.setText(
+                f"{track.display_name} · BDO "
+                f"{_ui_bdo_instrument_name(track.bdo_instrument_id)} · "
+                f"{note_summary}"
+            )
         self.inspector_text.setText(trf(
             "{track} · {count} 音符 · {pitch_range} · BDO: {instrument} · FX: {articulation}",
             track=track.display_name,
@@ -7993,10 +8022,29 @@ class MidiToBdoWindow(
 
     def _convert(self) -> None:
         analysis = self._analyze_conversion()
+        blockers = [
+            item for item in analysis["issues"]
+            if validation_issue_disposition(item) == "block"
+        ]
+        if blockers:
+            answer = QMessageBox.warning(
+                self,
+                tr("无法导出：存在阻断项"),
+                trf(
+                    "当前有 {count} 项必须先处理的问题。选择“打开”可定位到第一个相关轨道或音符。",
+                    count=len(blockers),
+                ),
+                QMessageBox.Open | QMessageBox.Cancel,
+                QMessageBox.Open,
+            )
+            if answer == QMessageBox.Open:
+                self._focus_validation_issue(blockers[0])
+            return
         confirmable = [
             item for item in analysis["issues"]
-            if item.severity in {"error", "warning"}
-            or item.code.startswith(("export.", "drum.remap", "tracks.merge"))
+            if validation_issue_disposition(item) in {
+                "approximate", "auto_fix", "user_choice", "quality_warning"
+            }
         ]
         if confirmable:
             answer = QMessageBox.question(
@@ -8011,6 +8059,8 @@ class MidiToBdoWindow(
             )
             if answer != QMessageBox.Yes:
                 return
+        if not self.owner_id and not self._resolve_owner_id_for_export():
+            return
         try:
             params = self._build_params()
         except Exception as exc:
@@ -8026,6 +8076,37 @@ class MidiToBdoWindow(
             lambda current=self.worker: self._convert_worker_finished(current)
         )
         self.worker.start()
+
+    def _resolve_owner_id_for_export(self) -> bool:
+        """Offer direct recovery for the most common export precondition."""
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setWindowTitle(tr("无法导出：缺少 Owner ID"))
+        dialog.setText(
+            tr(
+                "BDO 曲谱必须包含有效 Owner ID。可以立即从游戏曲谱读取，"
+                "也可以打开设置手动处理。"
+            )
+        )
+        load_button = dialog.addButton(
+            tr("从游戏曲谱读取"), QMessageBox.ButtonRole.AcceptRole
+        )
+        settings_button = dialog.addButton(
+            tr("去设置"), QMessageBox.ButtonRole.ActionRole
+        )
+        later_button = dialog.addButton(
+            tr("稍后处理"), QMessageBox.ButtonRole.RejectRole
+        )
+        dialog.setDefaultButton(load_button)
+        dialog.setEscapeButton(later_button)
+        dialog.exec()
+        clicked = dialog.clickedButton()
+        if clicked is load_button:
+            self._quick_load_owner_id()
+        elif clicked is settings_button:
+            self._open_settings(0)
+        return bool(self.owner_id)
 
     def _on_convert_finished(
         self,
@@ -8149,7 +8230,10 @@ class MidiToBdoWindow(
             # the worker's finished signal, keeping the GUI responsive and
             # preventing each close retry from starting another autosave.
             self._final_autosave_queued = True
-            self._flush_autosave()
+            if self._flush_autosave() is False and self._autosave_error:
+                self._keep_open_after_autosave_failure()
+                event.ignore()
+                return
         if (
             self.autosave_worker is not None
             or self.pending_autosave_request is not None
@@ -8162,6 +8246,10 @@ class MidiToBdoWindow(
                 return self.closeEvent(event)
             self.workspace_close_pending = True
             self.status_label.setText(tr("正在完成最终自动保存…"))
+            event.ignore()
+            return
+        if self._autosave_error:
+            self._keep_open_after_autosave_failure()
             event.ignore()
             return
         # Reference-tempo decoding is cancellable only between bounded decode
@@ -8195,6 +8283,14 @@ class MidiToBdoWindow(
             event.ignore()
             return
         self._close_all_note_editors()
+        # Rejecting an ordinary editor may replace its recovery draft with a
+        # formal-track snapshot. That last write must pass the same close gate.
+        if (
+            self.autosave_worker is not None
+            or self.pending_autosave_request is not None
+            or self._autosave_error
+        ):
+            return self.closeEvent(event)
         self._stop_preview()
         self.reference_audio.shutdown()
         self.realtime_audio.stop()

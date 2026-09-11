@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from bdo_music_composer.editor.bdo_articulation_profiles import PROFILES, profile_for
 from bdo_music_composer.editor.bdo_instrument_adaptation import (
@@ -90,7 +91,8 @@ class InstrumentEditorAdaptationTests(unittest.TestCase):
                     self.assertTrue(adaptation.should_render_pitch_row(pitch))
 
     def test_unknown_or_approximate_game_ranges_fail_open_for_note_display(self) -> None:
-        adaptation = self.adaptations[0x13]
+        adaptation = replace(self.adaptations[0x13], legal_pitches=None,
+                             legal_pitch_evidence_status="approximate")
         self.assertIsNone(adaptation.legal_pitches)
         self.assertIsNone(adaptation.legal_pitch_support(0))
         self.assertTrue(adaptation.should_render_pitch_row(0))
@@ -265,11 +267,15 @@ class InstrumentEditorAdaptationTests(unittest.TestCase):
         self.assertEqual((48, 64), drum_set.recommended_visible_range)
         self.assertEqual(99, drum_set.default_ntype)
 
-    def test_approximate_profile_range_can_focus_without_becoming_legal(self) -> None:
+    def test_handpan_editor_range_is_enforced_without_hiding_existing_notes(self) -> None:
         handpan = instrument_editor_display_adaptation(0x13)
         self.assertIsNotNone(handpan)
         assert handpan is not None
-        self.assertIsNone(handpan.legal_pitches)
+        self.assertEqual(frozenset(range(45, 89)), handpan.legal_pitches)
+        self.assertFalse(handpan.legal_pitch_support(44))
+        self.assertTrue(handpan.legal_pitch_support(45))
+        self.assertTrue(handpan.legal_pitch_support(88))
+        self.assertFalse(handpan.legal_pitch_support(89))
         self.assertEqual((45, 88), handpan.recommended_visible_range)
         self.assertTrue(handpan.should_render_pitch_row(12))
         self.assertTrue(handpan.should_render_pitch_row(119))

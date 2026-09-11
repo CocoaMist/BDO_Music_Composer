@@ -42,6 +42,11 @@ def estimate_reference_tempo(
 ) -> ReferenceTempoEstimate:
     """Estimate one steady tempo without decoding more than three minutes."""
 
+    if cancelled is not None and cancelled():
+        raise ReferenceTempoError("reference tempo analysis cancelled")
+    if not Path(path).is_file():
+        raise ReferenceTempoError("reference audio file is missing")
+
     import librosa  # type: ignore[import-not-found]
     import numpy as np
 

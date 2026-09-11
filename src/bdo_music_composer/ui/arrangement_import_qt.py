@@ -249,12 +249,16 @@ class ArrangementImportHostMixin:
                 source_lyrics = imported.lyric_events
                 source_bpm = imported.bpm
                 source_meter = imported.time_signature
+                compatibility_repairs = tuple(
+                    getattr(imported, "compatibility_repairs", ())
+                )
             elif source_type == "bdo":
                 snapshot = read_bdo_score(path, allow_trailing_data=True)
                 source_tracks = track_states_from_bdo_score(snapshot)
                 source_lyrics = ()
                 source_bpm = int(snapshot.bpm)
                 source_meter = int(snapshot.time_signature)
+                compatibility_repairs = ()
             else:
                 raise ValueError("unsupported arrangement source")
             offset_ms = self._arrangement_import_offset()
@@ -297,6 +301,14 @@ class ArrangementImportHostMixin:
             notes=plan.note_count,
             timing_note=timing_note,
         )
+        repair_count = sum(
+            int(repair.count) for repair in compatibility_repairs
+        )
+        if repair_count:
+            message += trf(
+                " · 已兼容修复 {count} 个越界数据值（原文件未修改）",
+                count=repair_count,
+            )
         self.status_label.setText(message)
         self.inspector_text.setText(message)
         self.show_toast(message, kind="success", duration_ms=4200)

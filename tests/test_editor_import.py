@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from bdo_midi import Note
+from bdo_midi import MidiGroupEvidence, Note
 from bdo_music_composer.core.conversion_settings import ConversionSettings
 from bdo_music_composer.editor.editor_import import (
     EditorImportError,
@@ -222,6 +222,15 @@ class MidiEditorImportTests(unittest.TestCase):
             2,
             [[{"kind": "cc", "value": 64}]],
             [{"text": "hello", "time_ms": 0.0}],
+            [MidiGroupEvidence(
+                channel=0,
+                source_program=12,
+                bank_msb=8,
+                bank_lsb=2,
+                track_names=("Electric Piano Layer",),
+                instrument_names=("DX EP",),
+                midi_dialect="GM2",
+            )],
         )
         settings = ConversionSettings(velocity_mode="layered")
         with (
@@ -239,17 +248,39 @@ class MidiEditorImportTests(unittest.TestCase):
 
         self.assertEqual(imported.bpm, 152)
         self.assertEqual(imported.time_signature_denominator, 8)
-        self.assertEqual(imported.tracks[0].display_name, "GM 12")
+        self.assertEqual(imported.tracks[0].display_name, "Electric Piano Layer")
         self.assertNotEqual(imported.tracks[0].notes[0].vel, 20)
         self.assertEqual(imported.tracks[0].notes[0].ntype, 7)
         self.assertEqual(imported.conversion_settings.velocity_mode, "preserve")
+        source = imported.tracks[0].performance_controls[0]
+        self.assertEqual(source["kind"], "midi_source")
+        self.assertEqual((source["bank_msb"], source["bank_lsb"]), (8, 2))
+        self.assertEqual(source["midi_dialect"], "GM2")
+        self.assertTrue(source["candidates"])
         parser.assert_called_once_with(
             "source.mid",
             apply_sustain=True,
             flatten_tempo=False,
             include_controls=True,
             include_lyrics=True,
+            include_group_evidence=True,
+            include_compatibility_repairs=True,
+            allow_compatibility_repairs=True,
+            require_quarter_denominator=False,
         )
+
+    def test_empty_midi_is_rejected_before_commit(self) -> None:
+        parsed = (120, 4, [], 1, [], [], [], ())
+        with patch(
+            "bdo_music_composer.editor.editor_import.parse_midi",
+            return_value=parsed,
+        ):
+            with self.assertRaisesRegex(ValueError, "no playable note events"):
+                prepare_midi_import(
+                    "empty.mid",
+                    ConversionSettings(),
+                    PRESENTATION,
+                )
 
 
 if __name__ == "__main__":

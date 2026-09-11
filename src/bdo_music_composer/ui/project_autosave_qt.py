@@ -137,6 +137,7 @@ class ProjectAutosaveHostMixin:
     def _autosave_succeeded(self, worker: AutosaveWriteWorker) -> None:
         if self.autosave_worker is not worker:
             return
+        self._autosave_error = ""
         if self._autosave_retry_request is worker.request:
             self._autosave_retry_request = None
             self._autosave_retry_count = 0
@@ -148,9 +149,10 @@ class ProjectAutosaveHostMixin:
     ) -> None:
         if self.autosave_worker is not worker:
             return
+        self._autosave_error = message.splitlines()[0] if message else "OSError"
         append_crash_log("Autosave failed", message)
         self.status_label.setText(
-            trf("自动保存失败：{error}", error=message.splitlines()[0])
+            trf("自动保存失败：{error}", error=self._autosave_error)
         )
         if self.pending_autosave_request is None:
             if self._autosave_retry_request is worker.request:
@@ -172,6 +174,16 @@ class ProjectAutosaveHostMixin:
             self._start_autosave_worker(pending)
         elif self.workspace_close_pending:
             QTimer.singleShot(0, self.close)
+
+    def _keep_open_after_autosave_failure(self) -> None:
+        # An idle writer is not proof of a durable save. Keep the live model
+        # available and let the next explicit close capture a fresh snapshot.
+        self.workspace_close_pending = False
+        self._final_autosave_queued = False
+        self.status_label.setText(trf(
+            "最终保存失败，窗口保持打开。请检查磁盘空间或权限后重试关闭：{error}",
+            error=self._autosave_error,
+        ))
 
 
 __all__ = ["AutosaveWriteWorker", "ProjectAutosaveHostMixin"]
