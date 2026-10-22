@@ -10,7 +10,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
-from typing import Any, Protocol, Sequence, runtime_checkable
+from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 
 from bdo_common.extension_contract import (
     ExtensionRequirement,
@@ -582,7 +582,16 @@ def apply_preview(
     tracks: Sequence[object],
     request: OptimizationRequest,
     preview: OptimizationPreview,
+    *,
+    note_factory: Callable[..., object] | None = None,
+    track_factory: Callable[..., object] | None = None,
 ) -> tuple[list, EffectChange | None]:
+    """Apply a validated proposal; explicit host factories also support blank scores.
+
+    Factories are supplied by the host, never by a plugin. Fresh track creation
+    lets authoring hosts avoid inheriting a source's Clips, mute or mixer state.
+    Existing optimizer callers retain prototype-based materialization.
+    """
     if tracks_fingerprint(tracks) != request.source_fingerprint:
         raise InvalidOptimizationPreview("the editor changed after analysis; analyse again")
     validate_preview(request, preview)
@@ -603,10 +612,11 @@ def apply_preview(
         target = by_id[track_id]
         prototype_note = target.notes[0] if target.notes else note_prototype
         materialized = _materialize_note_operations(source_by_id[track_id], operations)
-        if prototype_note is None and materialized:
+        if prototype_note is None and note_factory is None and materialized:
             raise InvalidOptimizationPreview("cannot materialize notes without a host Note prototype")
         target.notes = [
-            prototype_note._replace(
+            note_factory(note.pitch, note.vel, note.start, note.dur, note.ntype)
+            if note_factory is not None else prototype_note._replace(
                 pitch=note.pitch, vel=note.vel, start=note.start, dur=note.dur, ntype=note.ntype
             )
             for note in materialized
@@ -617,16 +627,24 @@ def apply_preview(
         if isinstance(operation, SetTrackInstrument):
             by_id[operation.track_id].bdo_instrument_id = operation.after
         elif isinstance(operation, CreateTrack):
-            if prototype is None or note_prototype is None:
+            if (prototype is None and track_factory is None) or (note_prototype is None and note_factory is None):
                 raise InvalidOptimizationPreview("cannot create a derived track without a source track")
             source_prototype = by_id.get(operation.source_track_id, prototype)
-            source_note_prototype = next(iter(source_prototype.notes), note_prototype)
+            source_note_prototype = next(iter(source_prototype.notes), note_prototype) if source_prototype is not None else note_prototype
             chunks = [
                 operation.notes[index:index + request.limits.derived_track_note_budget]
                 for index in range(0, len(operation.notes), request.limits.derived_track_note_budget)
             ]
             for part, chunk in enumerate(chunks, 1):
-                derived = copy(source_prototype)
+                derived = (
+                    track_factory(
+                        track_id=next_id, notes=[], gm_program=0,
+                        is_percussion=operation.is_percussion,
+                        display_name=operation.name,
+                        bdo_instrument_id=operation.instrument_id,
+                    )
+                    if track_factory is not None else copy(source_prototype)
+                )
                 derived.track_id = next_id
                 next_id += 1
                 suffix = f" {part}/{len(chunks)}" if len(chunks) > 1 else ""
@@ -638,7 +656,8 @@ def apply_preview(
                 derived.marnian_synth_mode = "basic"
                 derived.notes_optimized = True
                 derived.notes = [
-                    source_note_prototype._replace(
+                    note_factory(note.pitch, note.vel, note.start, note.dur, note.ntype)
+                    if note_factory is not None else source_note_prototype._replace(
                         pitch=note.pitch, vel=note.vel, start=note.start, dur=note.dur, ntype=note.ntype
                     )
                     for note in chunk

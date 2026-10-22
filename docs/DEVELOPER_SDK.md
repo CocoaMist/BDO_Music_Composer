@@ -69,7 +69,9 @@ Owner ID; never hard-code or publish someone else's identity.
 
 ## Extension boundaries
 
-Prefer the pure `optimization.registry` extension boundary for new optimizers.
+New distributable optimizers use API v1 and `.bdoopt` as documented in
+[`src/optimization/README.md`](../src/optimization/README.md).
+`optimization.registry` remains the compatibility boundary for older callers.
 Trusted optimizer bundles use the explicitly labelled in-process contract;
 non-trusted Windows extensions use the bounded NDJSON stdio envelope in
 `bdo_common.extension_protocol` and do not enter the GUI process.

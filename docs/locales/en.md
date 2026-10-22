@@ -20,6 +20,12 @@ Version 1.3.6 covers editing, autosave, optimization, preview, transcription ass
 - Review local transcription assistance as an editable draft before committing it.
 - Use undoable optimization, autosave, automatic export validation, and local project management.
 
+The source workspace adds **Creation Assistant** to the toolbar: generate short
+sketches, accompany a melody, adapt a selected game instrument, and shape
+dynamics or note lengths. Audition and choose parts before an undoable apply.
+This first version uses musical rules; the published EXE may not include it yet.
+See the [implementation and model plan](../CREATION_ASSISTANT_PLAN.md) (Chinese).
+
 <!-- section:requirements -->
 ## Install and run
 

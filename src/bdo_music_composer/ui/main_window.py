@@ -281,6 +281,7 @@ from bdo_music_composer.ui.editor_workspace_qt import EditorWorkspaceHostMixin  
 from bdo_music_composer.ui.arrangement_import_qt import ArrangementImportHostMixin  # noqa: E402
 from bdo_music_composer.ui.arrangement_clip_qt import ArrangementClipHostMixin  # noqa: E402
 from bdo_music_composer.ui.midi_export_qt import MidiExportHostMixin  # noqa: E402
+from bdo_music_composer.ui.creation_assistant_host import CreationAssistantHostMixin  # noqa: E402
 from bdo_music_composer.ui.editor_import_qt import (  # noqa: E402
     TRACK_IMPORT_PRESENTATION as _TRACK_IMPORT_PRESENTATION,
     prepare_midi_import,
@@ -704,6 +705,7 @@ def bdo_transcription_instrument_descriptors() -> tuple[BdoInstrumentDescriptor,
 
 
 class MidiToBdoWindow(
+    CreationAssistantHostMixin,
     EditorWorkspaceHostMixin,
     ProjectAutosaveHostMixin,
     TranscriptionRhythmDiagnosticMixin,
@@ -1273,6 +1275,10 @@ class MidiToBdoWindow(
         self.toolbar_optimize_btn = PillButton(tr("MIDI 优化"), "secondary", FluentSymbol.OPTIMIZE)
         self.toolbar_optimize_btn.clicked.connect(lambda: self._open_midi_optimizer(None))
         score_command_layout.addWidget(self.toolbar_optimize_btn)
+
+        self.toolbar_creation_btn = PillButton(tr("创作助手"), "secondary", FluentSymbol.ADD_TRACK)
+        self.toolbar_creation_btn.clicked.connect(self._open_creation_assistant)
+        score_command_layout.addWidget(self.toolbar_creation_btn)
 
         self.toolbar_multiplayer_sync_btn = PillButton(tr("多人同步器"), "secondary", FluentSymbol.NETWORK)
         self.toolbar_multiplayer_sync_btn.clicked.connect(self._open_multiplayer_synchronizer)
@@ -2037,6 +2043,7 @@ class MidiToBdoWindow(
             (self.toolbar_home_btn, "主页"),
             (self.toolbar_project_btn, "项目"),
             (self.toolbar_optimize_btn, "MIDI 优化"),
+            (self.toolbar_creation_btn, "创作助手"),
             (self.toolbar_multiplayer_sync_btn, "多人同步器"),
             (self.toolbar_master_effects_btn, "全局效果"),
             (self.toolbar_thanks_btn, "致谢"),

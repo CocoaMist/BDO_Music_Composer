@@ -444,6 +444,44 @@ conflicts fail closed and require the explicit “use this track to unify” act
 
 ## Editing and optimization
 
+### Creation assistant
+
+The source workspace also provides a `创作助手` toolbar entry. Its Qt-free
+`creation/brief.py` describes explicit intent, key, character and bar range;
+`creation/engine.py` supplies deterministic musical-rule alternatives for new
+sketches, accompaniment, instrument adaptation and expression. These baselines
+are not the player-corpus learning model and do not read private research files.
+
+`creation/workspace.py` captures the current editor tracks, prepares API v1
+previews, protects Clip ownership through `plan_clip_note_edit`, and prepares
+validated results in the worker. Part selection reuses those results and detaches
+mutable containers while sharing immutable `Note` values. Alternatives are
+deduplicated by their operations; lyrical accompaniment varies sustained,
+pulsed and arpeggiated textures even when the harmonic choices are identical.
+Cropped boundary notes remain unchanged, as does the track-wide duration scale
+when expression targets one Clip. New parts
+use fresh host track/note factories and share the existing game mixer for the
+same instrument. Instrument remapping also inherits the destination's shared
+Volume/Aux state and rejects conflicting destination peers. Their source melody
+is not rewritten. Instrument adaptation
+explicitly applies to the whole target track; expression applies only to the
+selected Clip/bar range and preserves manual articulations.
+
+`ui/dialogs/creation_assistant_dialog.py` owns bounded background analysis and
+candidate selection. `ui/creation_audition_qt.py` uses the existing asynchronous
+preview engine on detached tracks and restricts playback to the selected range.
+`ui/creation_assistant_host.py` rejects stale proposals, applies one project undo
+transaction, refreshes through the existing workspace path, and schedules
+autosave. Optional `creation/feedback.py` records bounded local choices without
+score notes, identity fields or uploads; it does not train a model automatically.
+
+Validation: `tests.test_creation_assistant`, `tests.test_creation_assistant_ui`,
+the optimizer/codec/export/localization suites, and
+`tools/verify_creation_assistant.py`. The tool writes original synthetic projects,
+MIDI and generic-renderer audio; game listening remains a separate acceptance
+step. The broader model and evaluation plan is in
+[`CREATION_ASSISTANT_PLAN.md`](CREATION_ASSISTANT_PLAN.md).
+
 - Main timeline: mute, solo, instrument assignment, FX, selection, and preview
   seeking. Its compact command bar keeps global transport on the left, collapses
   secondary track actions into one menu, and groups zoom/pan/fit on the right.
