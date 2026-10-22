@@ -15,6 +15,7 @@
 | 打包发布 | [Windows 打包](WINDOWS_PACKAGING.md) | [本地化](LOCALIZATION.md)、[内容红线](CONTENT_BOUNDARY.md) |
 | 查性能 | [原生核心计划](PERFORMANCE_NATIVE_CORE_PLAN.md) | [实测记录](benchmarks/) |
 | 使用 SDK | [Developer SDK](DEVELOPER_SDK.md) | [优化器扩展](OPTIMIZATION_EXTENSION_ROADMAP.md) |
+| 创作助手与后续模型 | [整体方案与实施](CREATION_ASSISTANT_PLAN.md) | [优化器扩展](OPTIMIZATION_EXTENSION_ROADMAP.md) |
 
 ## 按领域找
 

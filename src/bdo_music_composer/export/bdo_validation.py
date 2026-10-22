@@ -751,15 +751,13 @@ class _MergedInstrumentInput:
 
 def _merged_instrument_input(
     instrument_id: int,
-    sources: Sequence[object],
+    items: Sequence[_TrackValidationInput],
 ) -> _MergedInstrumentInput:
-    stable_sources = tuple(sources)
+    stable_sources = tuple(item.track for item in items)
     return _MergedInstrumentInput(
         instrument_id=instrument_id,
         sources=stable_sources,
-        note_count=sum(
-            len(project_track_notes(track)) for track in stable_sources
-        ),
+        note_count=sum(len(item.notes) for item in items),
         source_names=", ".join(
             str(track.display_name) for track in stable_sources
         ),
@@ -878,18 +876,13 @@ def _validate_instrument_capacity(
 
 
 def _validate_score_export_settings(
-    tracks: Sequence[object],
+    active_note_count: int,
     profile: BdoProfile,
     context: ValidationContext,
 ) -> list[ValidationIssue]:
     """Validate score-wide velocity policy and master-effect bytes."""
 
     issues: list[ValidationIssue] = []
-    active_note_count = sum(
-        len(project_track_notes(track))
-        for track in tracks
-        if int(track.track_id) in context.active_track_ids
-    )
     if (
         active_note_count
         and context.velocity_mode != VELOCITY_MODE_PRESERVE
@@ -947,14 +940,16 @@ def validate_tracks(
     """Validate tracks in stable track, instrument-group, then score order."""
 
     issues: list[ValidationIssue] = []
-    merged: dict[int, list[object]] = {}
+    merged: dict[int, list[_TrackValidationInput]] = {}
+    active_note_count = 0
     for track in tracks:
         item = _track_validation_input(track, profile, context)
         scope_issues = _validate_track_scope(item, context)
         if scope_issues:
             issues.extend(scope_issues)
             continue
-        merged.setdefault(item.serialized_id, []).append(track)
+        merged.setdefault(item.serialized_id, []).append(item)
+        active_note_count += len(item.notes)
         issues.extend(_validate_track_basics(item, profile))
         issues.extend(
             _validate_track_notes_and_articulation(item, profile, context)
@@ -964,7 +959,7 @@ def validate_tracks(
         group = _merged_instrument_input(instrument_id, sources)
         issues.extend(_validate_same_instrument_group(group, profile))
         issues.extend(_validate_instrument_capacity(group, profile))
-    issues.extend(_validate_score_export_settings(tracks, profile, context))
+    issues.extend(_validate_score_export_settings(active_note_count, profile, context))
     return tuple(issues)
 
 

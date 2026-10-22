@@ -3550,8 +3550,9 @@ for _source, (_english, _japanese, _korean) in _DAW_WORKFLOW_TRANSLATIONS.items(
 del _source, _english, _japanese, _korean
 
 from .ui_refinement_translations import UI_REFINEMENT_TRANSLATIONS
+from .creation_translations import CREATION_TRANSLATIONS
 
-for _source, (_english, _japanese, _korean) in UI_REFINEMENT_TRANSLATIONS.items():
+for _source, (_english, _japanese, _korean) in (UI_REFINEMENT_TRANSLATIONS | CREATION_TRANSLATIONS).items():
     EN[_source] = _english
     JA[_source] = _japanese
     KO[_source] = _korean

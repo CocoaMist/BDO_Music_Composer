@@ -4,6 +4,7 @@ from collections import namedtuple
 from dataclasses import dataclass, replace
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from bdo_codec import MAX_NOTES_PER_TRACK
 from bdo_music_composer.core.bdo_profile import Evidence, LimitPolicy, load_bdo_profile
@@ -16,6 +17,7 @@ from bdo_music_composer.export.bdo_validation import (
 from optimization.plugin_api import OptimizationLimits
 from bdo_music_composer.core.project_paths import PROFILES_DIR
 from bdo_music_composer.editor.pitch_transform import PitchTransformPlan
+from bdo_music_composer.editor.arrangement_clip import project_track_notes
 
 
 Note = namedtuple("Note", "pitch vel start dur ntype")
@@ -50,6 +52,17 @@ class BdoProfileValidationTests(unittest.TestCase):
             {36: 48, 37: 49},
             lambda track: track.bdo_instrument_id,
         )
+
+    def test_one_projection_per_track_is_shared_by_all_validation_passes(self) -> None:
+        tracks = [Track(i, [Note(60, 80, 0, 100, 0)], 0x0B) for i in range(3)]
+        context = replace(self.context(tracks), active_track_ids=frozenset({0, 1}), velocity_mode="normalize")
+        with patch("bdo_music_composer.export.bdo_validation.project_track_notes", wraps=project_track_notes) as project:
+            issues = validate_tracks(tracks, self.profile, context)
+        self.assertEqual(project.call_count, len(tracks))
+        self.assertEqual([call.args[0] for call in project.call_args_list], tracks)
+        self.assertEqual([i.related_track_ids for i in issues if i.code == "tracks.merge"], [(0, 1)])
+        self.assertEqual([i.track_id for i in issues if i.code == "track.excluded"], [2])
+        self.assertTrue(any(i.code == "export.velocity_mode" for i in issues))
 
     def test_profile_loads_versioned_limits_and_evidence(self) -> None:
         self.assertEqual(self.profile.format_version, 9)

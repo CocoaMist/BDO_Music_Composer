@@ -18,6 +18,11 @@ utilities. The desktop app and packaged runtime must not depend on them.
 
 ## Repository and performance checks
 
+- [`verify_creation_assistant.py`](verify_creation_assistant.py) creates original
+  synthetic MIDI/project/audio examples, verifies MIDI import and BDO round
+  trips, renders through the current generic preview engine, and captures the
+  real authoring dialog. Runs on two CPUs without player files or game writes;
+  outputs a new folder under `out/creation-assistant/` by default.
 - [`check_repository_hygiene.py`](check_repository_hygiene.py)
 - [`check_readme_locales.py`](check_readme_locales.py)
 - [`collect_runtime_compatibility.py`](collect_runtime_compatibility.py)

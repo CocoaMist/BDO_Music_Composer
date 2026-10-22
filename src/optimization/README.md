@@ -66,3 +66,11 @@ in-process loader.
 Existing callers may continue using `register_algorithm()` and
 `optimize_tracks(..., algorithm=...)`. New distributable algorithms should use
 optimizer API v1 and `.bdoopt` instead.
+
+## Blank-project authoring
+
+`apply_preview` optionally accepts host-owned `note_factory` and `track_factory`
+callables. They materialize the first notes/parts of a blank score and allow
+fresh tracks without copying a reference's Clips, monitoring state or metadata.
+They are not supplied by a plugin and do not bypass preview validation. Existing
+callers retain the previous prototype-based behavior.
