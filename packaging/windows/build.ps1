@@ -1,6 +1,7 @@
 param(
     [switch]$PublicRelease,
-    [string]$SigningCertificateThumbprint = ""
+    [string]$SigningCertificateThumbprint = "",
+    [string]$OutputDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,8 +11,14 @@ $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $Spec = Join-Path $PSScriptRoot "BDOMusicComposer.spec"
 $Policy = Join-Path $ProjectRoot "packaging\transcription_release_policy.json"
 $AuditScript = Join-Path $ProjectRoot "scripts\audit_transcription_licenses.py"
-$OutputExecutable = Join-Path $ProjectRoot "dist\BDO-Music-Composer.exe"
-$ReleaseEvidence = Join-Path $ProjectRoot "dist\release-evidence"
+$DistRoot = if ($OutputDirectory) {
+    $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
+}
+else {
+    Join-Path $ProjectRoot "dist"
+}
+$OutputExecutable = Join-Path $DistRoot "BDO-Music-Composer.exe"
+$ReleaseEvidence = Join-Path $DistRoot "release-evidence"
 $SignAndVerify = Join-Path $PSScriptRoot "sign-and-verify.ps1"
 $EvidenceScript = Join-Path $ProjectRoot "scripts\generate_release_evidence.py"
 $TempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
@@ -132,7 +139,7 @@ assert callable(soxr.ResampleStream)
     & $Python -m PyInstaller `
         --noconfirm `
         --clean `
-        --distpath dist `
+        --distpath $DistRoot `
         --workpath $BuildWork `
         $Spec
     if ($LASTEXITCODE -ne 0) {

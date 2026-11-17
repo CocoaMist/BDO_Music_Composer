@@ -114,6 +114,24 @@ a = Analysis(
     noarchive=False,
     optimize=1,
 )
+
+# Qt's generic image-format hook collects a PDF rasterizer. Composer accepts raster artwork.
+unused_qt_pdf_binaries = {
+    "pyside6/qt6pdf.dll",
+    "pyside6/plugins/imageformats/qpdf.dll",
+}
+a.binaries = [
+    entry for entry in a.binaries
+    if entry[0].replace("\\", "/").casefold() not in unused_qt_pdf_binaries
+]
+
+# Keep the Qt catalogs for the languages exposed by the desktop application.
+qt_locale_suffixes = ("_en.qm", "_zh_cn.qm", "_zh_tw.qm", "_ja.qm", "_ko.qm")
+a.datas = [
+    entry for entry in a.datas
+    if not entry[0].replace("\\", "/").casefold().startswith("pyside6/translations/")
+    or entry[0].casefold().endswith(qt_locale_suffixes)
+]
 pyz = PYZ(a.pure)
 
 exe = EXE(
