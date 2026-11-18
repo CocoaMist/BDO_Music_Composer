@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/readme-cover.webp" width="100%" alt="BDO Music Composer · 月下的编曲室">
+  <img src="docs/images/readme-interface-dark.png" width="100%" alt="BDO Music Composer 实机界面组图，展示首页、多轨编排、钢琴卷帘和模型设置">
 </p>
 
 <p align="center">
