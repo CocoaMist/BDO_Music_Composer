@@ -9,7 +9,7 @@ BDO Music Composer is a local multitrack editor for Black Desert composers: impo
 <!-- section:status -->
 ## Is it ready to use?
 
-Version 1.3.6 covers editing, autosave, optimization, preview, transcription assistance, and score export. If the game's score mechanics do not change, this will likely remain the temporary long-term stable release. Compatibility can still vary by computer, audio device, and game version.
+Version 2026.11.0.1 includes multitrack editing, autosave, local playback, reference-audio transcription assistance, and BDO v9 score export. The Windows executable passed startup and audio transcription self-tests. The full regression suite still has known failures. See the [release notes](https://github.com/CocoaMist/BDO_Music_Composer/releases/tag/v2026.11.0.1).
 
 <!-- section:features -->
 ## Features
@@ -20,16 +20,12 @@ Version 1.3.6 covers editing, autosave, optimization, preview, transcription ass
 - Review local transcription assistance as an editable draft before committing it.
 - Use undoable optimization, autosave, automatic export validation, and local project management.
 
-The source workspace adds **Creation Assistant** to the toolbar: generate short
-sketches, accompany a melody, adapt a selected game instrument, and shape
-dynamics or note lengths. Audition and choose parts before an undoable apply.
-This first version uses musical rules; the published EXE may not include it yet.
-See the [implementation and model plan](../CREATION_ASSISTANT_PLAN.md) (Chinese).
+The **Creation Assistant** can sketch short pieces, suggest accompaniment, adapt a part to a game instrument, or adjust dynamics and note lengths. Preview the result and choose which parts to apply. You can undo the changes. Model settings support DeepSeek and compatible APIs. See the [implementation and model plan](../CREATION_ASSISTANT_PLAN.md) (Chinese).
 
 <!-- section:requirements -->
 ## Install and run
 
-Most users should use the published Windows build. Source development requires Python 3.12 and the environment described in the [contributing guide](../../CONTRIBUTING.md). The project entry point is `main.py`.
+Download the Windows x64 ZIP from [Releases](https://github.com/CocoaMist/BDO_Music_Composer/releases), extract it, and run `BDO-Music-Composer.exe`. The Chinese PDF guide is also available separately. To run from source, set up Python 3.12 as described in the [contributing guide](../../CONTRIBUTING.md) and run `main.py`.
 
 <!-- section:workflow -->
 ## Basic workflow

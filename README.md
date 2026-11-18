@@ -1,16 +1,5 @@
 <p align="center">
-  <img src="docs/images/readme-interface-dark.png" width="100%" alt="BDO Music Composer 实机界面组图，展示首页、多轨编排、钢琴卷帘和模型设置">
-</p>
-
-<p align="center">
-  <strong>《黑色沙漠》作曲玩家的 Windows 多轨编辑器</strong><br>
-  MIDI 导入 · Clip 编排 · 钢琴卷帘 · BDO v9 导出
-</p>
-
-<p align="center">
-  <a href="https://github.com/CocoaMist/BDO_Music_Composer/releases/latest"><strong>下载 Windows 版</strong></a> ·
-  <a href="https://github.com/CocoaMist/BDO_Music_Composer/issues">报告问题</a> ·
-  <a href="CHANGELOG.md#unreleased">源码更新</a>
+  <img src="docs/images/readme-interface-dark.png" width="100%" alt="BDO Music Composer screenshots showing the home screen, multitrack timeline, piano roll, and model settings">
 </p>
 
 <p align="center">
@@ -21,59 +10,70 @@
 </p>
 
 <p align="center">
-  <a href="#为什么做这个">为什么做这个</a> ·
-  <a href="#写谱时能做什么">写谱时能做什么</a> ·
-  <a href="#怎么开始">怎么开始</a> ·
-  <a href="#源码与许可">源码与许可</a>
+  <strong>A Windows multitrack editor for Black Desert composers</strong><br>
+  MIDI import · Clip arrangement · Piano roll · BDO v9 export
+</p>
+
+<p align="center">
+  <a href="https://github.com/CocoaMist/BDO_Music_Composer/releases"><strong>Download for Windows</strong></a> ·
+  <a href="https://github.com/CocoaMist/BDO_Music_Composer/issues">Report an issue</a> ·
+  <a href="CHANGELOG.md#unreleased">Changelog</a>
+</p>
+
+<p align="center">
+  <a href="#why-i-built-it">Why I built it</a> ·
+  <a href="#what-you-can-do">What you can do</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#source-and-license">Source and license</a>
 </p>
 
 ---
 
-## 为什么做这个
+## Why I built it
 
-我做这个工具，是想让玩《黑色沙漠》的朋友能在本地编曲、试听，再把曲谱带回游戏里一起演奏。手头有一份 MIDI 的时候，想试一下让长笛第二遍再进，或把伴奏那几颗音放轻一点，打开工程就能改。试听、保存和导出都用你改过的那份音符。
+I built this tool so Black Desert players can arrange music, listen to it locally, and bring their scores back into the game to play together. If you have a MIDI file and want the flute to come in on the second pass, or want a few notes in the accompaniment to play more softly, you can make those edits in the project. Playback, saving, and export all use the notes you edited.
 
-> 薄荷可可维护这个项目，ChatGPT 和 Codex 协助设计、写代码和跑测试。感谢 CN 服务器「彩虹乐队」的玩家把它拿去写歌，还把遇到的问题带回来。
-
----
-
-## 写谱时能做什么
-
-[![多轨编排界面，展示《月灯小调》的六条乐器轨道。](docs/images/readme-workbench.webp)](docs/images/readme-workbench.webp)
-
-*界面取自源码版。示例乐段为截图专门生成，点图可以放大。*
-
-- **先排段落** · 在时间轴上移动、切分、复制 Clip，单独调整某个片段、整轨或全曲的力度。
-- **再修音符** · 双击 Clip 打开钢琴卷帘，改音高、时值、奏法和力度。可以边看编排边改音符，也可以把卷帘单独打开。
-- **听一遍再导出** · 在本机试听，也能加载参考音频做对照。完成后导出 BDO v9，进游戏复核乐器和效果。
-
-[![钢琴卷帘同屏工作区，展示音符和力度控制。](docs/images/readme-editor.webp)](docs/images/readme-editor.webp)
-
-### 创作 Agent
-
-卡在某句旋律时，可以选一段问它乐句怎么接，或者请它试写一段伴奏。源码版的模型设置可连接 DeepSeek 或 OpenAI 兼容接口，支持自动读取模型列表，也能手动填模型 ID。
-
-![DeepSeek 模型设置，右侧可以选择模型和响应方式。](docs/images/readme-model-settings.webp)
-
-使用联网模型时，这一轮的指令和所需曲谱信息会发送给你配置的服务。MIDI 编辑和本机试听可独立使用。
+> CocoaMist maintains the project, with help from ChatGPT and Codex on design, code, and testing. Thanks to the Rainbow Band players on the Chinese server for writing music with it and reporting what they found.
 
 ---
 
-## 怎么开始
+## What you can do
 
-1. 在下载页取 Windows 版，双击 `BDO-Music-Composer.exe`。单文件版可以直接运行。
-2. 导入 MIDI 或打开已有的 BDO 曲谱，选一段，先按播放听听。
-3. 双击想改的 Clip。改完把工程也存一份，之后还能继续编辑 Clip 和轨道。
-4. 导出时填写有效的 Owner ID，把曲谱带回游戏试听。
+[![The multitrack timeline with six instrument tracks.](docs/images/readme-workbench.webp)](docs/images/readme-workbench.webp)
 
-下载页列出已发布版本。上面的同屏工作区和模型设置展示的是仓库源码。[查看未发布改动](CHANGELOG.md#unreleased)
+*The screenshots show the current source build. The example passage was created for the screenshots. Select an image to enlarge it.*
+
+- **Arrange clips.** Move, split, or copy them on the timeline. Adjust velocity for a clip, a track, or the whole piece.
+- **Edit notes.** Double-click a clip to open the piano roll and edit pitch, duration, articulation, and velocity. Keep the timeline in view or open the piano roll separately.
+- **Listen and export.** Preview locally and load reference audio for comparison. Export a BDO v9 score and check the instruments and playback in game.
+
+[![The piano roll alongside the timeline, showing notes and velocity controls.](docs/images/readme-editor.webp)](docs/images/readme-editor.webp)
+
+### Creation assistant
+
+When a melody stalls, select a passage and ask for a continuation or an accompaniment. In the source build, model settings support DeepSeek and OpenAI-compatible APIs. You can fetch the available models or enter a model ID yourself.
+
+![DeepSeek model settings with options for selecting a model and response mode.](docs/images/readme-model-settings.webp)
+
+When you use an online model, the app sends your prompt and the score information needed for that request to your configured service. MIDI editing and local playback work independently.
 
 ---
 
-## 源码与许可
+## Getting started
 
-源码入口是 `main.py`，开发环境使用 Python 3.12。想改代码或从源码运行，可以先看[贡献指南](CONTRIBUTING.md)。维护者接手可从 [AGENTS.md](AGENTS.md) 和[接手手册](docs/AGENT_HANDOFF.md)开始。
+1. Download the Windows x64 ZIP, extract it, and run `BDO-Music-Composer.exe`. The ZIP includes a Chinese user guide.
+2. Import a MIDI file or open an existing BDO score. Select a passage and listen to it.
+3. Double-click a clip to edit it. Save the project so you can return to the clips and tracks later.
+4. Enter a valid Owner ID when exporting, then play the score in game to check the result.
 
-[文档索引](docs/README.md) · [隐私与本机数据](docs/locales/zh-CN.md#隐私) · [第三方声明](THIRD_PARTY_NOTICES.md)
+[See unreleased changes](CHANGELOG.md#unreleased).
 
-原创代码使用 [MIT](LICENSE)。这是独立社区项目，《黑色沙漠》及相关游戏素材的权利归各自权利方所有。
+---
+
+## Source and license
+
+The source entry point is `main.py`, and development uses Python 3.12. See the [contributing guide](CONTRIBUTING.md) to run from source or make changes. Maintainers can start with [AGENTS.md](AGENTS.md) and the [handoff guide](docs/AGENT_HANDOFF.md).
+
+[Documentation](docs/README.md) · [Privacy and local data](docs/locales/en.md#privacy) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+The original code is licensed under [MIT](LICENSE). This is an independent community project. Black Desert and its game assets belong to their respective rights holders.
