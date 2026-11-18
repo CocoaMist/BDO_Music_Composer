@@ -10,6 +10,7 @@ from PySide6.QtCore import (
     QTimer,
     Qt,
 )
+from PySide6.QtGui import QAccessible, QAccessibleAnnouncementEvent
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
@@ -18,9 +19,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from bdo_music_composer.ui.page_transition_qt import MOTION_PROPERTY, interface_motion_allowed
 
 _TOAST_EDGE_MARGIN = 16
 _TOAST_ANCHOR_GAP = 8
+_TOAST_MAX_TEXT_WIDTH = 480
 _BOTTOM_ANCHOR_NAMES = (
     "EditorFooter",
     "SettingsFooter",
@@ -31,12 +34,6 @@ _BOTTOM_ANCHOR_NAMES = (
 class GlobalToast(QFrame):
     """One non-blocking message surface shared by each top-level window."""
 
-    COLORS = {
-        "info": "#f0c66f",
-        "success": "#8fcf9d",
-        "warning": "#f5a524",
-        "error": "#ef8178",
-    }
     MARKERS = {
         "info": "i",
         "success": "✓",
@@ -48,8 +45,7 @@ class GlobalToast(QFrame):
         super().__init__(parent)
         self.setObjectName("GlobalToast")
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setMinimumWidth(270)
-        self.setMaximumWidth(620)
+        self.setProperty("i18nSkipAccessibleName", True)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 8, 16, 8)
         layout.setSpacing(9)
@@ -60,11 +56,13 @@ class GlobalToast(QFrame):
         layout.addWidget(self.marker, 0, Qt.AlignmentFlag.AlignVCenter)
         self.message = QLabel()
         self.message.setObjectName("ToastMessage")
+        self.message.setTextFormat(Qt.PlainText)
+        self.message.setProperty("i18nSkipText", True)
         self.message.setWordWrap(True)
-        self.message.setMaximumWidth(540)
         layout.addWidget(self.message, stretch=1)
 
         self.opacity = QGraphicsOpacityEffect(self)
+        self.opacity.setEnabled(False)
         self.setGraphicsEffect(self.opacity)
         self.animation = QPropertyAnimation(self.opacity, b"opacity", self)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -79,92 +77,83 @@ class GlobalToast(QFrame):
         self.hide()
 
     def _apply_kind_style(self, kind: str) -> None:
-        color = self.COLORS[kind]
+        if self.property("toastKind") == kind:
+            return
         self.setProperty("toastKind", kind)
-        self.setStyleSheet(
-            f"""
-            QFrame#GlobalToast {{
-                background: rgba(20, 22, 21, 242);
-                border: 0;
-                border-left: 3px solid {color};
-                border-bottom: 1px solid #453a2b;
-                border-radius: 1px;
-            }}
-            QLabel#ToastMessage {{
-                color: #e8e2d8;
-                background: transparent;
-                border: 0;
-                font-family: "Microsoft YaHei UI";
-                font-size: 11px;
-                font-weight: 600;
-            }}
-            QLabel#ToastMarker {{
-                color: {color};
-                background: rgba(0, 0, 0, 48);
-                border: 1px solid {color};
-                border-radius: 2px;
-                font-family: "Microsoft YaHei UI";
-                font-size: 10px;
-                font-weight: 900;
-            }}
-            """
-        )
+        self.marker.style().unpolish(self.marker)
+        self.marker.style().polish(self.marker)
+        self.marker.update()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is self.parent() and event.type() in {
-            QEvent.Type.Resize,
-            QEvent.Type.Show,
-            QEvent.Type.LayoutRequest,
-        }:
-            QTimer.singleShot(0, self._reposition)
+        if watched is self.parent():
+            if event.type() in {
+                QEvent.Type.Resize,
+                QEvent.Type.Show,
+                QEvent.Type.LayoutRequest,
+            }:
+                QTimer.singleShot(0, self, self._reposition)
+            elif (
+                event.type() == QEvent.Type.DynamicPropertyChange
+                and event.propertyName() == MOTION_PROPERTY.encode("ascii")
+                and self._animation_phase
+                and not interface_motion_allowed(self)
+            ):
+                self.animation.stop()
+                self._animation_finished()
         return super().eventFilter(watched, event)
 
     def show_message(self, text: str, kind: str = "info", duration_ms: int = 2600) -> None:
         if not text:
             return
-        resolved_kind = kind if kind in self.COLORS else "info"
+        resolved_kind = kind if kind in self.MARKERS else "info"
         self.animation.stop()
         self.hold_timer.stop()
+        initial_opacity = self.opacity.opacity() if self.isVisible() else 0.0
+        fade_in = initial_opacity < 1.0 and interface_motion_allowed(self)
+        self._animation_phase = ""
+        self._hold_duration_ms = max(0, duration_ms)
         self._apply_kind_style(resolved_kind)
         self.marker.setText(self.MARKERS[resolved_kind])
         self.message.setText(text)
         self.message.ensurePolished()
-        parent = self.parentWidget()
-        available_width = min(
-            540,
-            max(220, (parent.width() - 110) if parent is not None else 540),
-        )
-        natural_width = self.message.fontMetrics().horizontalAdvance(text) + 4
-        self.message.setFixedWidth(
-            max(220, min(available_width, natural_width))
-        )
         self.setAccessibleName(text)
-        self.opacity.setOpacity(0.0)
+        self.opacity.setOpacity(initial_opacity if fade_in else 1.0)
+        self.opacity.setEnabled(fade_in)
         self.show()
-        self.adjustSize()
         self._reposition()
         self.raise_()
-        self.animation.setDuration(170)
-        self.animation.setStartValue(0.0)
-        self.animation.setEndValue(1.0)
-        self._animation_phase = "in"
-        self._hold_duration_ms = max(0, duration_ms)
-        self.animation.start()
+        # Windows can play a system sound for an accessibility Alert.
+        QAccessible.updateAccessibility(QAccessibleAnnouncementEvent(self, text))
+        if fade_in:
+            self._start_fade("in", 170, 1.0)
+        else:
+            self.hold_timer.start(self._hold_duration_ms)
 
     def fade_out(self) -> None:
         self.animation.stop()
-        self.animation.setDuration(260)
+        if self.isVisible() and interface_motion_allowed(self):
+            self._start_fade("out", 260, 0.0)
+        else:
+            self._animation_phase = "out"
+            self._animation_finished()
+
+    def _start_fade(self, phase: str, duration: int, target: float) -> None:
+        self._animation_phase = phase
+        self.opacity.setEnabled(True)
+        self.animation.setDuration(duration)
         self.animation.setStartValue(self.opacity.opacity())
-        self.animation.setEndValue(0.0)
-        self._animation_phase = "out"
+        self.animation.setEndValue(target)
         self.animation.start()
 
     def _animation_finished(self) -> None:
-        if self._animation_phase == "in":
-            self.hold_timer.start(self._hold_duration_ms)
-        elif self._animation_phase == "out":
-            self.hide()
+        phase = self._animation_phase
         self._animation_phase = ""
+        if phase == "in":
+            self.opacity.setOpacity(1.0)
+            self.hold_timer.start(self._hold_duration_ms)
+        elif phase == "out":
+            self.hide()
+        self.opacity.setEnabled(False)
 
     def _reposition(self) -> None:
         parent = self.parentWidget()
@@ -172,6 +161,7 @@ class GlobalToast(QFrame):
             return
 
         contents = parent.contentsRect()
+        self._fit_message(contents.width() - 2 * _TOAST_EDGE_MARGIN)
         left = contents.left() + _TOAST_EDGE_MARGIN
         right = contents.right() + 1 - _TOAST_EDGE_MARGIN
         centered_x = contents.left() + (contents.width() - self.width()) // 2
@@ -200,6 +190,19 @@ class GlobalToast(QFrame):
             bottom_boundary - self.height(),
         )
         self.move(int(x), int(y))
+
+    def _fit_message(self, available_width: int) -> None:
+        margins = self.layout().contentsMargins()
+        decoration_width = margins.left() + margins.right() + 2 * self.frameWidth()
+        decoration_width += self.marker.width() + self.layout().spacing()
+        max_width = max(1, min(_TOAST_MAX_TEXT_WIDTH, available_width - decoration_width))
+        metrics = self.message.fontMetrics()
+        widest_line = max(metrics.horizontalAdvance(line) for line in self.message.text().split("\n"))
+        text_width = min(max_width, max(120, widest_line + 2))
+        text_height = max(metrics.height(), self.message.heightForWidth(text_width))
+        if self.message.width() != text_width or self.message.height() != text_height:
+            self.message.setFixedSize(text_width, text_height)
+            self.adjustSize()
 
 
 def show_global_toast(

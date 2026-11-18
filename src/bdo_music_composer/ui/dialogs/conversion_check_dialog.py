@@ -102,6 +102,10 @@ class ConversionCheckDialog(QDialog):
         issue_heading.addStretch(1)
         layout.addLayout(issue_heading)
         self.issue_list = QListWidget()
+        self.issue_list.setWordWrap(True)
+        self.issue_list.setTextElideMode(Qt.ElideNone)
+        self.issue_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.issue_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.issue_list.setToolTip(tr("双击问题可定位到对应轨道和音符"))
         self.issue_list.itemDoubleClicked.connect(self._focus_issue)
         layout.addWidget(self.issue_list, stretch=1)
@@ -232,6 +236,7 @@ class ConversionCheckDialog(QDialog):
                 ),
             ))
             item.setData(Qt.UserRole, issue)
+            item.setToolTip(item.text())
             if issue.severity == "error":
                 item.setForeground(QColor("#ef7772"))
             elif issue.severity == "warning":

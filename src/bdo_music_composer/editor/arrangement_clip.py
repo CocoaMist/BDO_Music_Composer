@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import hashlib
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from uuid import uuid4
 
 from bdo_midi import Note
@@ -432,7 +433,12 @@ def track_clip_bounds(track: TrackState) -> ClipBounds | None:
 
 
 def clip_by_id(track: TrackState, clip_id: str) -> ArrangementClipState:
-    clips = track_clips(track)
+    return _clip_from_clips(track_clips(track), clip_id)
+
+
+def _clip_from_clips(
+    clips: Sequence[ArrangementClipState], clip_id: str,
+) -> ArrangementClipState:
     if not clip_id and len(clips) == 1:
         return clips[0]
     for clip in clips:
@@ -442,6 +448,8 @@ def clip_by_id(track: TrackState, clip_id: str) -> ArrangementClipState:
 
 
 def _note_with_times(note: object, *, start: float, duration: float) -> object:
+    if type(note) is Note:
+        return Note(note.pitch, note.vel, start, duration, note.ntype)
     replace_method = getattr(note, "_replace", None)
     if callable(replace_method):
         return replace_method(start=start, dur=duration)
@@ -463,6 +471,9 @@ def _note_belongs_to_clip(
     onset = float(note.start)
     if clip.content_start_ms <= onset < clip.content_end_ms:
         return True
+    source_start, source_end = _clip_source_window(clip)
+    if not source_start <= onset < source_end:
+        return False
     all_clips = tuple(clips) if clips is not None else track_clips(track)
     if any(
         value.content_start_ms <= onset < value.content_end_ms
@@ -575,9 +586,25 @@ def project_track_note_refs(track: TrackState) -> tuple[tuple[int, Note], ...]:
                     item[0],
                 ),
             ))
+    notes_by_onset: list[tuple[float, int, Note]] = []
+    if len(clips) > 1:
+        for note_index, note in enumerate(track.notes):
+            onset = float(note.start)
+            if not math.isnan(onset):
+                notes_by_onset.append((onset, note_index, note))
+        notes_by_onset.sort()
+    onsets = [candidate[0] for candidate in notes_by_onset]
     for clip in clips:
         source_start, source_end = _clip_source_window(clip)
-        for note_index, note in enumerate(track.notes):
+        # Owned notes can start before a trimmed boundary and sustain across
+        # it. Older orphan notes can also start inside the source window.
+        first_possible = min(clip.content_start_ms, source_start)
+        candidates: Iterable[tuple[int, Note]] = enumerate(track.notes)
+        if onsets and math.isfinite(first_possible) and math.isfinite(source_end):
+            begin = bisect_left(onsets, first_possible)
+            stop = bisect_left(onsets, source_end, lo=begin)
+            candidates = ((note_index, note) for _, note_index, note in notes_by_onset[begin:stop])
+        for note_index, note in candidates:
             if not _note_belongs_to_clip(
                 track, note, clip, clips=clips
             ):
@@ -603,21 +630,23 @@ def project_track_notes(track: TrackState) -> tuple[Note, ...]:
     return tuple(note for _index, note in project_track_note_refs(track))
 
 
-def _clip_editor_note_pairs(
-    track: TrackState, clip: ArrangementClipState
-) -> tuple[tuple[int, Note], ...]:
-    """Return authored indexes plus the exact visible Clip projection."""
-
-    source_start, source_end = _clip_source_window(clip)
-    clips = track_clips(track)
-    projected: list[tuple[int, Note]] = []
+def _owned_clip_note_pairs(
+    track: TrackState, clip: ArrangementClipState, clips: Sequence[ArrangementClipState],
+) -> Iterable[tuple[int, Note]]:
     for note_index, note in enumerate(track.notes):
-        if not _note_belongs_to_clip(
-            track, note, clip, clips=clips
-        ):
-            continue
+        if _note_belongs_to_clip(track, note, clip, clips=clips):
+            yield note_index, note
+
+
+def _project_editor_note_pairs(
+    clip: ArrangementClipState, owned_notes: Iterable[tuple[int, Note]], *,
+    duration_scale: float = 1.0,
+) -> tuple[tuple[int, Note], ...]:
+    source_start, source_end = _clip_source_window(clip)
+    projected: list[tuple[int, Note]] = []
+    for note_index, note in owned_notes:
         visible_start = max(float(note.start), source_start)
-        visible_end = min(_note_end(note), source_end)
+        visible_end = min(_note_end(note, duration_scale), source_end)
         if visible_end - visible_start < 1.0:
             continue
         projected.append((note_index, _note_with_times(
@@ -634,6 +663,17 @@ def _clip_editor_note_pairs(
     ))
 
 
+def _clip_editor_note_pairs(
+    track: TrackState, clip: ArrangementClipState, *, duration_scale: float = 1.0,
+) -> tuple[tuple[int, Note], ...]:
+    """Return authored indexes plus the exact visible Clip projection."""
+
+    return _project_editor_note_pairs(
+        clip, _owned_clip_note_pairs(track, clip, track_clips(track)),
+        duration_scale=duration_scale,
+    )
+
+
 def clip_editor_notes(
     track: TrackState, clip_id: str
 ) -> tuple[Note, ...]:
@@ -641,6 +681,13 @@ def clip_editor_notes(
 
     clip = clip_by_id(track, clip_id)
     return tuple(note for _index, note in _clip_editor_note_pairs(track, clip))
+
+
+def project_clip_notes(track: TrackState, clip_id: str) -> tuple[Note, ...]:
+    """Project the audible note lengths in one Clip with full track ownership."""
+    return tuple(note for _index, note in _clip_editor_note_pairs(
+        track, clip_by_id(track, clip_id), duration_scale=track.duration_scale,
+    ))
 
 
 def clip_authored_note_indices(
@@ -712,8 +759,14 @@ def clip_projected_note_bounds(
 def clip_edit_fingerprint(track: TrackState, clip_id: str) -> str:
     """Identify the exact Clip/note state used to open a note-editor draft."""
 
-    clip = clip_by_id(track, clip_id)
     clips = track_clips(track)
+    clip = _clip_from_clips(clips, clip_id)
+    return _fingerprint_clip_notes(clip, _owned_clip_note_pairs(track, clip, clips))
+
+
+def _fingerprint_clip_notes(
+    clip: ArrangementClipState, owned_notes: Iterable[tuple[int, Note]],
+) -> str:
     payload = (
         tuple((
             clip.clip_id,
@@ -723,13 +776,7 @@ def clip_edit_fingerprint(track: TrackState, clip_id: str) -> str:
             clip.content_end_ms,
             clip.time_offset_ms,
         )),
-        tuple(
-            tuple(note)
-            for note in track.notes
-            if _note_belongs_to_clip(
-                track, note, clip, clips=clips
-            )
-        ),
+        tuple(tuple(note) for _, note in owned_notes),
     )
     return hashlib.sha256(repr(payload).encode("utf-8")).hexdigest()
 
@@ -737,7 +784,29 @@ def clip_edit_fingerprint(track: TrackState, clip_id: str) -> str:
 def clip_editor_scope(track: TrackState, clip_id: str) -> ClipEditorScope:
     """Capture the one authoritative boundary used by a Clip editor session."""
 
-    clip = clip_by_id(track, clip_id)
+    clips = track_clips(track)
+    clip = _clip_from_clips(clips, clip_id)
+    fingerprint = _fingerprint_clip_notes(clip, _owned_clip_note_pairs(track, clip, clips))
+    return _clip_editor_scope(track, clip, clips, fingerprint)
+
+
+def prepare_clip_editor(
+    track: TrackState, clip_id: str,
+) -> tuple[ClipEditorScope, tuple[Note, ...]]:
+    """Resolve a Clip's boundary and draft from the same authored notes."""
+
+    clips = track_clips(track)
+    clip = _clip_from_clips(clips, clip_id)
+    owned_notes = tuple(_owned_clip_note_pairs(track, clip, clips))
+    scope = _clip_editor_scope(track, clip, clips, _fingerprint_clip_notes(clip, owned_notes))
+    notes = tuple(note for _, note in _project_editor_note_pairs(clip, owned_notes))
+    return scope, notes
+
+
+def _clip_editor_scope(
+    track: TrackState, clip: ArrangementClipState, clips: Sequence[ArrangementClipState],
+    fingerprint: str,
+) -> ClipEditorScope:
     return ClipEditorScope(
         track_id=int(track.track_id),
         clip_id=clip.clip_id,
@@ -749,13 +818,13 @@ def clip_editor_scope(track: TrackState, clip_id: str) -> ClipEditorScope:
         resize_end_limit_ms=min(
             (
                 float(value.start_ms)
-                for value in track_clips(track)
+                for value in clips
                 if value.clip_id != clip.clip_id
                 and value.start_ms >= clip.end_ms - 1e-6
             ),
             default=None,
         ),
-        fingerprint=clip_edit_fingerprint(track, clip.clip_id),
+        fingerprint=fingerprint,
     )
 
 
@@ -2063,6 +2132,7 @@ __all__ = [
     "clip_editor_scope",
     "clip_projected_note_bounds",
     "clip_edit_fingerprint",
+    "prepare_clip_editor",
     "copy_clip",
     "default_empty_clip",
     "clip_for_note",

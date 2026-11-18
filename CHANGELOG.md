@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Connect the score agent to DeepSeek or an OpenAI-compatible service, with
+  local Ollama and LM Studio presets, automatic model discovery, and manual
+  model ID entry.
+
+- Arrange Clips and edit notes in the same workbench. Resize the panes, open
+  an independent editor, or use the shared Track, note, and effects inspector.
+- Group the caption into project, playback and tempo, and actions. Checked
+  caption controls show their state in the icon. Clear or cancel a timeline
+  or piano-roll selection with Escape, or clear it by clicking empty canvas
+  in selection mode.
+- Open Settings and Feedback as centered utility panels over a dimmed,
+  blurred view of the workspace. Feedback can submit a user-written message
+  or selected diagnostic summary and read updates in its local inbox.
+- Offer rule-based Creation Assistant drafts with audition, selection of
+  parts, and undoable application.
+
 ## 1.3.6 - 2026-08-16
 
 - Bring back independent Track and Clip velocity adjustment, including Shift

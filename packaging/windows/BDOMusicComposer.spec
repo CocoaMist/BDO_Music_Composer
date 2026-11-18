@@ -59,11 +59,16 @@ non_onnx_backend_excludes = [
 
 datas = [
     (str(project_root / "assets" / "ui" / "timeline_background.png"), "assets/ui"),
-    (str(project_root / "assets" / "ui" / "timeline_background_v2.png"), "assets/ui"),
-    (str(project_root / "assets" / "ui" / "home" / "home_moonlit_atelier_v3.png"), "assets/ui/home"),
+    (str(project_root / "assets" / "ui" / "timeline_background_v2.webp"), "assets/ui"),
+    (str(project_root / "assets" / "ui" / "score_agent_portrait.webp"), "assets/ui"),
+    (str(project_root / "assets" / "ui" / "home" / "home_moonlit_atelier_v3.webp"), "assets/ui/home"),
+    (str(project_root / "assets" / "ui" / "about" / "chatgpt_avatar.webp"), "assets/ui/about"),
+    (str(project_root / "assets" / "ui" / "about" / "cocoamist_avatar.webp"), "assets/ui/about"),
     (str(project_root / "assets" / "instruments" / "ai_v1"), "assets/instruments/ai_v1"),
     (str(project_root / "assets" / "icons" / "app_icon.png"), "assets/icons"),
+    (str(project_root / "assets" / "icons" / "indicators"), "assets/icons/indicators"),
     (str(project_root / "assets" / "icons" / "shai_ensemble_mark.png"), "assets/icons"),
+    (str(project_root / "assets" / "fonts"), "assets/fonts"),
     (str(project_root / "data" / "mappings" / "bdo_wwise_midi_map.json"), "data/mappings"),
     (str(project_root / "data" / "profiles" / "bdo_global_v9.json"), "data/profiles"),
     (
@@ -101,10 +106,15 @@ hiddenimports = [
     "soxr",
 ]
 
+# QtWebView loads its Windows backend as a plugin at runtime.
+webview_backend = collect_dynamic_libs(
+    "PySide6", search_patterns=["qtwebview_webview2.dll"]
+)
+
 a = Analysis(
     [str(project_root / "main.py")],
     pathex=[str(project_root / "src"), str(project_root)],
-    binaries=collect_dynamic_libs("onnxruntime"),
+    binaries=[*collect_dynamic_libs("onnxruntime"), *webview_backend],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -115,7 +125,8 @@ a = Analysis(
     optimize=1,
 )
 
-# Qt's generic image-format hook collects a PDF rasterizer. Composer accepts raster artwork.
+# Qt's generic image-format hook collects the PDF rasterizer. Composer accepts
+# raster artwork and displays web documents through the system WebView2.
 unused_qt_pdf_binaries = {
     "pyside6/qt6pdf.dll",
     "pyside6/plugins/imageformats/qpdf.dll",

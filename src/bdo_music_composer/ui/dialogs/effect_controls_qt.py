@@ -1,11 +1,11 @@
-"""Game-inspired, accessible controls shared by the effect dialogs."""
+"""Accessible controls shared by the effect dialogs."""
 
 from __future__ import annotations
 
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QRadialGradient
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
     QDial,
@@ -17,9 +17,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from bdo_music_composer.ui.theme import hig_tokens as hig
+
 
 class GameEffectDial(QDial):
-    """A lightweight Windows-safe dial with the composer's game visual language."""
+    """An effect dial that pairs a visible input value with direct adjustment."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -35,30 +37,16 @@ class GameEffectDial(QDial):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        center = QPointF(self.width() / 2.0, self.height() / 2.0)
-        radius = min(self.width(), self.height()) / 2.0 - 7.0
+        side = min(self.width(), self.height())
+        painter.translate((self.width() - side) / 2, (self.height() - side) / 2)
+        painter.scale(side / 112.0, side / 112.0)
+        center = QPointF(56.0, 56.0)
+        radius = 49.0
         enabled = self.isEnabled()
 
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(7, 8, 9, 120))
-        painter.drawEllipse(center, radius, radius)
-        painter.setBrush(QColor(71, 61, 46, 130 if enabled else 70))
-        painter.drawEllipse(center, radius - 3.0, radius - 3.0)
-
         face_radius = radius - 7.0
-        face = QRadialGradient(
-            center.x() - face_radius * 0.28,
-            center.y() - face_radius * 0.34,
-            face_radius * 1.35,
-        )
-        if enabled:
-            face.setColorAt(0.0, QColor("#53535b"))
-            face.setColorAt(0.55, QColor("#34343a"))
-            face.setColorAt(1.0, QColor("#1a1b1e"))
-        else:
-            face.setColorAt(0.0, QColor("#37373b"))
-            face.setColorAt(1.0, QColor("#202124"))
-        painter.setBrush(face)
+        painter.setPen(QPen(QColor(hig.SEPARATOR), 1.0))
+        painter.setBrush(QColor(hig.PANEL))
         painter.drawEllipse(center, face_radius, face_radius)
 
         arc_rect = QRectF(
@@ -68,7 +56,7 @@ class GameEffectDial(QDial):
             (face_radius - 4.0) * 2.0,
         )
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(QColor("#17181b"), 4.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(QColor(hig.CONTROL_BORDER), 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawArc(arc_rect, 225 * 16, -270 * 16)
 
         ratio = (self.value() - self.minimum()) / max(
@@ -76,10 +64,8 @@ class GameEffectDial(QDial):
             self.maximum() - self.minimum(),
         )
         if ratio > 0.0:
-            active = QLinearGradient(arc_rect.bottomLeft(), arc_rect.topRight())
-            active.setColorAt(0.0, QColor("#8f6426"))
-            active.setColorAt(1.0, QColor("#f0c76d"))
-            painter.setPen(QPen(active, 4.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            active = QColor(hig.ACCENT if enabled else hig.INDICATOR_BORDER)
+            painter.setPen(QPen(active, 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             painter.drawArc(arc_rect, 225 * 16, int(-270.0 * ratio * 16.0))
 
         for tick in range(11):
@@ -87,7 +73,7 @@ class GameEffectDial(QDial):
             angle = math.radians(135.0 + 270.0 * tick_ratio)
             outer = face_radius - 8.0
             inner = outer - (5.0 if tick in (0, 5, 10) else 3.0)
-            color = QColor("#9b8562") if tick_ratio <= ratio and enabled else QColor("#4b4a48")
+            color = QColor(hig.SECONDARY_TEXT if tick_ratio <= ratio and enabled else hig.CONTROL_BORDER)
             painter.setPen(QPen(color, 1.2))
             painter.drawLine(
                 QPointF(center.x() + math.cos(angle) * inner, center.y() + math.sin(angle) * inner),
@@ -104,9 +90,14 @@ class GameEffectDial(QDial):
         painter.setBrush(QColor("#d8b66b") if enabled else QColor("#68645d"))
         painter.drawEllipse(center, 3.0, 3.0)
 
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(hig.FOCUS), 1.25))
+            painter.drawEllipse(center, radius + 3.0, radius + 3.0)
+
 
 class EffectControlCard(QFrame):
-    """A game-style rack slot backed by an exact numeric spin box."""
+    """An effect rack slot backed by a numeric spin box."""
 
     def __init__(
         self,
@@ -134,6 +125,7 @@ class EffectControlCard(QFrame):
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setWordWrap(True)
         layout.addWidget(label)
+        self.title_label = label
 
         self.dial = GameEffectDial(self)
         self.dial.setRange(field.minimum(), field.maximum())
@@ -150,12 +142,40 @@ class EffectControlCard(QFrame):
         field.setAlignment(Qt.AlignmentFlag.AlignCenter)
         field.setFixedSize(88, 32)
         layout.addWidget(field, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.field = field
 
         scale = QLabel("0     100")
         scale.setObjectName("EffectControlScale")
         scale.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scale.setProperty("i18nSkip", True)
         layout.addWidget(scale)
+        self.scale_label = scale
+
+    def use_compact_layout(self) -> None:
+        """Keep the same dial/field binding in a narrow inspector row."""
+        layout = self.layout()
+        while layout.count():
+            layout.takeAt(0)
+        layout.setDirection(QVBoxLayout.Direction.LeftToRight)
+        layout.setContentsMargins(8, 8, 10, 8)
+        layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.dial.setFixedSize(72, 72)
+        layout.addWidget(self.dial)
+        column = QVBoxLayout()
+        column.setSpacing(6)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        column.addWidget(self.title_label)
+        self.field.setMinimumWidth(0)
+        self.field.setMaximumWidth(16777215)
+        self.field.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.field.setAccessibleName(self.dial.accessibleName())
+        self.field.lineEdit().setAccessibleName(self.dial.accessibleName())
+        column.addWidget(self.field)
+        layout.addLayout(column, 1)
+        self.scale_label.hide()
 
 
 class EffectModeCard(QFrame):
@@ -172,7 +192,7 @@ class EffectModeCard(QFrame):
         super().__init__(parent)
         self.setObjectName("EffectModeCard")
         self.setProperty("uiRole", "effectModeCard")
-        self.setMinimumWidth(184)
+        self.setMinimumWidth(230)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
@@ -186,6 +206,7 @@ class EffectModeCard(QFrame):
         label = QLabel(title)
         label.setObjectName("EffectControlTitle")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setWordWrap(True)
         layout.addWidget(label)
 
         emblem_stage = QWidget(self)
@@ -207,17 +228,30 @@ class EffectModeCard(QFrame):
         selector.setObjectName("MarnianModeSelector")
         selector.setProperty("uiRole", "effectModeSelector")
         selector.setAccessibleName(title)
-        selector.setToolTip(note)
-        selector.setMinimumWidth(164)
+        selector.setAccessibleDescription(note)
+        selector.setMinimumWidth(208)
         selector.setFixedHeight(32)
-        layout.addWidget(selector, alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(selector)
 
-        hint = QLabel("SOURCE MODE")
+        hint = QLabel(note)
         hint.setObjectName("EffectModeNote")
-        hint.setProperty("i18nSkip", True)
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setToolTip(note)
+        hint.setWordWrap(True)
         layout.addWidget(hint)
+
+    def use_compact_layout(self) -> None:
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.layout().setContentsMargins(10, 10, 10, 10)
+        self.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.findChild(QWidget, "EffectModeStage").hide()
+        self.findChild(QLabel, "EffectModeNote").hide()
+        title = self.findChild(QLabel, "EffectControlTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        title.setWordWrap(True)
+        selector = self.findChild(QComboBox, "MarnianModeSelector")
+        selector.setMinimumWidth(0)
+        selector.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
 
 
 __all__ = ["EffectControlCard", "EffectModeCard", "GameEffectDial"]

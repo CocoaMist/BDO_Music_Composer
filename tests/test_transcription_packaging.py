@@ -45,8 +45,9 @@ class TranscriptionPackagingTests(unittest.TestCase):
         spec = (
             PROJECT_ROOT / "packaging" / "windows" / "BDOMusicComposer.spec"
         ).read_text(encoding="utf-8")
-        self.assertIn('"timeline_background_v2.png"', spec)
-        self.assertIn('"home_moonlit_atelier_v3.png"', spec)
+        self.assertIn('"timeline_background.png"', spec)
+        self.assertIn('"timeline_background_v2.webp"', spec)
+        self.assertIn('"home_moonlit_atelier_v3.webp"', spec)
         self.assertNotIn('"loading_noble_maestra_v2.png"', spec)
         self.assertIn('"assets" / "instruments" / "ai_v1"', spec)
         self.assertTrue(
@@ -54,7 +55,7 @@ class TranscriptionPackagingTests(unittest.TestCase):
                 PROJECT_ROOT
                 / "assets"
                 / "ui"
-                / "timeline_background_v2.png"
+                / "timeline_background_v2.webp"
             ).is_file()
         )
         self.assertTrue(
@@ -63,7 +64,7 @@ class TranscriptionPackagingTests(unittest.TestCase):
                 / "assets"
                 / "ui"
                 / "home"
-                / "home_moonlit_atelier_v3.png"
+                / "home_moonlit_atelier_v3.webp"
             ).is_file()
         )
         icon_root = PROJECT_ROOT / "assets" / "instruments" / "ai_v1"
@@ -84,11 +85,13 @@ class TranscriptionPackagingTests(unittest.TestCase):
             / "build.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn('"BDOMusicComposer.spec"', build_script)
+        self.assertIn('Join-Path $ProjectRoot "dist"', build_script)
+        self.assertIn("GetUnresolvedProviderPathFromPSPath($OutputDirectory)", build_script)
         self.assertIn(
-            '$OutputExecutable = Join-Path $ProjectRoot '
-            '"dist\\BDO-Music-Composer.exe"',
+            '$OutputExecutable = Join-Path $DistRoot "BDO-Music-Composer.exe"',
             build_script,
         )
+        self.assertIn("--distpath $DistRoot", build_script)
         self.assertIn("Cannot replace $OutputExecutable", build_script)
         self.assertIn('"--require-public-clearance"', build_script)
         self.assertIn("scripts\\install_transcription.ps1 first", build_script)

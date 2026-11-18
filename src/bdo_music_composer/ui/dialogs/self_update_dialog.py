@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -24,6 +25,19 @@ def _active_locale() -> str:
     return str(active.language) if active is not None else "zh_CN"
 
 
+class _StatusSummary(QLabel):
+    """Reserve all wrapped lines next to a badge of fixed height."""
+
+    def setText(self, text: str) -> None:
+        super().setText(text)
+        self.setMinimumHeight(max(0, self.heightForWidth(self.width())))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if event.oldSize().width() != event.size().width():
+            self.setMinimumHeight(max(0, self.heightForWidth(self.width())))
+
+
 class SelfUpdateDialog(QDialog):
     """Show authenticated release notes without blocking background work."""
 
@@ -41,6 +55,7 @@ class SelfUpdateDialog(QDialog):
         self.auto_download = bool(auto_download)
         self._ready = False
         self._progress_percent: int | None = None
+        self._release_notes = ""
         self.setObjectName("SelfUpdateDialog")
         self.setModal(False)
         self.setWindowModality(Qt.NonModal)
@@ -62,17 +77,35 @@ class SelfUpdateDialog(QDialog):
         self.status_card = QFrame()
         self.status_card.setObjectName("SelfUpdateStatusCard")
         self.status_card.setProperty("uiRole", "statusCard")
-        status_layout = QHBoxLayout(self.status_card)
+        status_layout = QVBoxLayout(self.status_card)
         status_layout.setContentsMargins(12, 8, 12, 8)
         status_layout.setSpacing(8)
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        status_layout.addLayout(status_row)
         self.status_badge = QLabel()
         self.status_badge.setObjectName("SelfUpdateStatusBadge")
         self.status_badge.setProperty("uiRole", "statusBadge")
-        status_layout.addWidget(self.status_badge)
-        self.status_summary = QLabel()
+        status_row.addWidget(self.status_badge)
+        self.status_summary = _StatusSummary()
+        self.status_label = self.status_summary
         self.status_summary.setObjectName("SelfUpdateStatusSummary")
         self.status_summary.setWordWrap(True)
-        status_layout.addWidget(self.status_summary, stretch=1)
+        status_row.addWidget(self.status_summary, stretch=1)
+        self.progress_row = QWidget()
+        progress_layout = QHBoxLayout(self.progress_row)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(8)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("SelfUpdateProgress")
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setTextVisible(False)
+        progress_layout.addWidget(self.progress_bar, stretch=1)
+        self.progress_value = QLabel()
+        self.progress_value.setObjectName("Muted")
+        self.progress_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        progress_layout.addWidget(self.progress_value)
+        status_layout.addWidget(self.progress_row)
         layout.addWidget(self.status_card)
 
         self.notes_label = QLabel()
@@ -82,15 +115,8 @@ class SelfUpdateDialog(QDialog):
         self.notes_view = QTextBrowser()
         self.notes_view.setObjectName("SelfUpdateNotes")
         self.notes_view.setOpenExternalLinks(False)
+        self.notes_view.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         layout.addWidget(self.notes_view, stretch=1)
-
-        self.status_label = QLabel()
-        self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setTextVisible(True)
-        layout.addWidget(self.progress_bar)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         self.close_button = buttons.button(QDialogButtonBox.Close)
@@ -110,22 +136,39 @@ class SelfUpdateDialog(QDialog):
             trf("更新来源：{source}", source=source_label)
         )
         self.notes_label.setText(tr("本次更新"))
-        notes = self.manifest.localized_notes(_active_locale()).strip()
-        self.notes_view.setPlainText(notes or tr("此版本暂无详细说明。"))
+        notes = self.manifest.localized_notes(_active_locale()).strip() or tr("此版本暂无详细说明。")
+        if notes != self._release_notes:
+            self._release_notes = notes
+            self.notes_view.setPlainText(notes)
         self.close_button.setText(tr("稍后"))
+        self._render_status()
+
+    def _render_status(self) -> None:
         if self._ready:
             self.status_badge.setText(tr("已准备"))
-            self.status_summary.setText(tr("更新包已验证，将在下次启动时自动安装。"))
-            self.status_label.setText(
+            self.status_summary.setText(
                 tr("更新包已通过验证；将在下次启动时自动安装。")
             )
+        elif self.auto_download:
+            self.status_badge.setText(tr("下载中"))
+            self.status_summary.setText(tr("正在后台下载更新…"))
+        else:
+            self.status_badge.setText(tr("可更新"))
+            self.status_summary.setText(tr("已发现新版本；可在软件更新设置中启用后台下载。"))
+        self.progress_bar.setAccessibleName(self.status_badge.text())
+        self._render_progress()
+
+    def _render_progress(self) -> None:
+        self.progress_row.setVisible(self._ready or self.auto_download)
+        self.progress_value.setText(
+            f"{self._progress_percent}%" if self._progress_percent is not None else ""
+        )
+        self.progress_value.setVisible(self._progress_percent is not None)
+        if self._ready:
             self.progress_bar.setRange(0, 1)
             self.progress_bar.setValue(1)
             self.progress_bar.setFormat(tr("准备完成"))
         elif self.auto_download:
-            self.status_badge.setText(tr("下载中"))
-            self.status_summary.setText(tr("正在后台获取经过签名验证的更新包。"))
-            self.status_label.setText(tr("正在后台下载更新…"))
             if self._progress_percent is None:
                 self.progress_bar.setRange(0, 0)
                 self.progress_bar.setFormat("")
@@ -135,29 +178,19 @@ class SelfUpdateDialog(QDialog):
                 self.progress_bar.setFormat(
                     trf("下载进度：{percent}%", percent=self._progress_percent)
                 )
-        else:
-            self.status_badge.setText(tr("可更新"))
-            self.status_summary.setText(tr("已发现新版本；可在软件更新设置中启用后台下载。"))
-            self.status_label.setText(
-                tr("已发现新版本；可在软件更新设置中启用后台下载。")
-            )
-            self.progress_bar.setRange(0, 1)
-            self.progress_bar.setValue(0)
-            self.progress_bar.setFormat(tr("等待下载"))
 
     def set_progress(self, downloaded: int, total: int) -> None:
-        if total <= 0:
+        if self._ready or total <= 0:
             return
-        self._progress_percent = max(
-            0,
-            min(100, round(int(downloaded) * 100 / int(total))),
-        )
-        self._render()
+        percent = max(0, min(100, round(int(downloaded) * 100 / int(total))))
+        if percent != self._progress_percent:
+            self._progress_percent = percent
+            self._render_progress()
 
     def set_ready(self) -> None:
         self._ready = True
         self._progress_percent = 100
-        self._render()
+        self._render_status()
 
     def retranslate_dynamic_content(self) -> None:
         self._render()

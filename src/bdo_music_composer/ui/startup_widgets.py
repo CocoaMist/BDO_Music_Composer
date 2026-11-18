@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
+    QObject,
     QPointF,
     Property,
     QPropertyAnimation,
@@ -35,6 +37,44 @@ from PySide6.QtWidgets import (
 )
 
 from bdo_music_composer.ui.i18n import tr
+
+
+def place_startup_window(window: QWidget) -> QRect | None:
+    screen = window.screen() or QApplication.primaryScreen()
+    if screen is None:
+        return None
+    available = screen.availableGeometry()
+    minimum = window.minimumSize()
+    target = QRect(
+        0,
+        0,
+        max(minimum.width(), min(window.width(), available.width())),
+        max(minimum.height(), min(window.height(), available.height())),
+    )
+    target.moveCenter(available.center())
+    window.setGeometry(target)
+    return target
+
+
+class FirstVisiblePaint(QObject):
+    """Queue startup completion after the visible main window paints."""
+
+    def __init__(self, window: QWidget, callback: Callable[[], None]) -> None:
+        super().__init__(window)
+        self.callback = callback
+        window.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        window = self.parent()
+        if (
+            watched is window
+            and event.type() == QEvent.Type.Paint
+            and window.isVisible()
+        ):
+            window.removeEventFilter(self)
+            QTimer.singleShot(0, window, self.callback)
+            self.deleteLater()
+        return False
 
 
 class _LoadingSpinner(QWidget):
@@ -206,26 +246,22 @@ class StartupReveal(QWidget):
             }
             QLabel#StartupEyebrow {
                 color: #bd9557;
-                font-family: "Segoe UI Semibold", "Microsoft YaHei UI";
                 font-size: 9px;
                 font-weight: 700;
                 letter-spacing: 2px;
             }
             QLabel#StartupTitle {
                 color: #eee6d8;
-                font-family: "Microsoft YaHei UI", "Segoe UI";
                 font-size: 17px;
                 font-weight: 600;
             }
             QLabel#StartupStatus {
                 color: #d8bd87;
-                font-family: "Microsoft YaHei UI";
                 font-size: 12px;
                 font-weight: 600;
             }
             QLabel#StartupDetail {
                 color: #9e978c;
-                font-family: "Microsoft YaHei UI";
                 font-size: 9px;
             }
             """
@@ -270,20 +306,10 @@ class StartupReveal(QWidget):
         window = self.parentWidget()
         if window is None:
             return
-        screen = window.screen() or QApplication.primaryScreen()
-        if screen is None:
+        target = place_startup_window(window)
+        if target is None:
             return
-        available = screen.availableGeometry()
-        minimum = window.minimumSize()
-        target = QRect(
-            0,
-            0,
-            max(minimum.width(), min(window.width(), available.width())),
-            max(minimum.height(), min(window.height(), available.height())),
-        )
-        target.moveCenter(available.center())
         self._target_window_geometry = target
-        window.setGeometry(target)
         window.ensurePolished()
         if window.layout() is not None:
             window.layout().activate()
@@ -424,4 +450,4 @@ class StartupReveal(QWidget):
         self.finished.emit()
 
 
-__all__ = ["StartupReveal"]
+__all__ = ["FirstVisiblePaint", "StartupReveal", "place_startup_window"]

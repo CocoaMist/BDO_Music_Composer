@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import traceback
 
-from PySide6.QtCore import QObject, QThread, QUrl, Signal
+from PySide6.QtCore import QObject, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -38,6 +39,10 @@ from bdo_music_composer.editor.editor_models import (
     game_supported_pitches,
 )
 from bdo_music_composer.ui.i18n import tr, tr_joinv, trf, trfv, trv
+from bdo_music_composer.ui.theme import hig_tokens as hig
+from bdo_music_composer.ui.ui_controls import (
+    ElidedCheckBox, ElidedComboBox, ElidedLabel, dialog_footer, dialog_header,
+)
 from optimization import OptimizerConfig
 from optimization.plugin_api import InvalidOptimizationPreview, OptimizationIntensity
 from optimization.plugin_host import (
@@ -286,97 +291,98 @@ class MidiOptimizeDialog(QDialog):
         self.resize(820, 430)
         self.setMinimumSize(720, 410)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 16)
-        layout.setSpacing(10)
-
-        header_card = QFrame()
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        header_card = dialog_header(
+            tr("MIDI 优化"),
+            tr("选择作用范围，分析预览后再应用；不会跳过游戏安全校验。"),
+        )
         header_card.setObjectName("OptimizerHeader")
-        header_card.setProperty("uiRole", "dialogHeader")
-        header = QVBoxLayout(header_card)
-        header.setContentsMargins(16, 12, 16, 12)
-        header.setSpacing(4)
-        title = QLabel(tr("MIDI 优化"))
-        title.setObjectName("OptimizerTitle")
-        header.addWidget(title)
-        subtitle = QLabel(tr(
-            "选择作用范围，分析预览后再应用；不会跳过游戏安全校验。"
-        ))
-        subtitle.setObjectName("Muted")
-        subtitle.setWordWrap(True)
-        header.addWidget(subtitle)
-        layout.addWidget(header_card)
+        root.addWidget(header_card)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(24, 16, 24, 18)
+        layout.setSpacing(12)
+        self.content_scroll = QScrollArea()
+        self.content_scroll.setWidgetResizable(True)
+        self.content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.content_scroll.setWidget(content)
+        root.addWidget(self.content_scroll, 1)
 
         scope_card = QFrame()
         scope_card.setObjectName("OptimizerOptions")
         scope_card.setProperty("uiRole", "workflowSection")
-        scope_selector = QGridLayout(scope_card)
+        self.scope_selector = scope_selector = QGridLayout(scope_card)
         scope_selector.setContentsMargins(14, 12, 14, 12)
         scope_selector.setHorizontalSpacing(10)
         scope_selector.setVerticalSpacing(6)
-        scope_selector.addWidget(QLabel(tr("优化范围")), 0, 0)
-        self.scope_combo = QComboBox()
+        self.scope_combo = ElidedComboBox()
+        self.scope_field_label = QLabel(tr("优化范围"))
+        self.scope_field_label.setBuddy(self.scope_combo)
+        scope_selector.addWidget(self.scope_field_label, 0, 0)
+        self.scope_combo.setAccessibleName(tr("优化范围"))
         self._populate_scope_combo()
         self.scope_combo.setEnabled(not self.scope_locked)
-        scope_selector.addWidget(self.scope_combo, 0, 1, 1, 3)
+        scope_selector.addWidget(self.scope_combo, 0, 1)
+        scope_selector.setColumnStretch(1, 1)
         self.scope_summary_label = QLabel()
         self.scope_summary_label.setObjectName("OptimizerScopeSummary")
         self.scope_summary_label.setWordWrap(True)
-        scope_selector.addWidget(self.scope_summary_label, 1, 0, 1, 4)
+        scope_selector.addWidget(self.scope_summary_label, 1, 0, 1, 2)
         self.scope_help_label = QLabel()
         self.scope_help_label.setObjectName("Muted")
         self.scope_help_label.setWordWrap(True)
-        scope_selector.addWidget(self.scope_help_label, 2, 0, 1, 4)
+        scope_selector.addWidget(self.scope_help_label, 2, 0, 1, 2)
         layout.addWidget(scope_card)
 
         selector_card = QFrame()
         selector_card.setObjectName("OptimizerOptions")
         selector_card.setProperty("uiRole", "workflowSection")
-        selector = QGridLayout(selector_card)
+        self.algorithm_selector = selector = QGridLayout(selector_card)
         selector.setContentsMargins(14, 12, 14, 12)
         selector.setHorizontalSpacing(10)
-        selector.addWidget(QLabel(tr("优化算法")), 0, 0)
-        self.algorithm_combo = QComboBox()
+        selector.setVerticalSpacing(6)
+        self.algorithm_combo = ElidedComboBox()
+        self.algorithm_field_label = QLabel(tr("优化算法"))
+        self.algorithm_field_label.setBuddy(self.algorithm_combo)
+        selector.addWidget(self.algorithm_field_label, 0, 0)
+        self.algorithm_combo.setAccessibleName(tr("优化算法"))
         # Built-ins use catalog source keys; individual third-party rows are
         # skipped so a plugin name that happens to equal a UI word stays exact.
         self.algorithm_combo.currentIndexChanged.connect(self._algorithm_changed)
-        selector.addWidget(self.algorithm_combo, 0, 1, 1, 3)
+        selector.addWidget(self.algorithm_combo, 0, 1)
         self.open_plugins_button = QPushButton(tr("算法包目录"))
         self.open_plugins_button.clicked.connect(self._open_plugin_directory)
-        selector.addWidget(self.open_plugins_button, 0, 4)
         self.refresh_plugins_button = QPushButton(tr("刷新"))
         self.refresh_plugins_button.clicked.connect(self._reload_algorithms)
-        selector.addWidget(self.refresh_plugins_button, 0, 5)
-        selector.addWidget(QLabel(tr("优化强度")), 1, 0)
+        plugin_actions = QHBoxLayout()
+        plugin_actions.setSpacing(hig.ITEM_GAP)
+        plugin_actions.addWidget(self.open_plugins_button)
+        plugin_actions.addWidget(self.refresh_plugins_button)
+        plugin_actions.addStretch(1)
+        selector.addLayout(plugin_actions, 2, 1)
         self.intensity_combo = QComboBox()
+        self.intensity_field_label = QLabel(tr("优化强度"))
+        self.intensity_field_label.setBuddy(self.intensity_combo)
+        selector.addWidget(self.intensity_field_label, 1, 0)
+        self.intensity_combo.setAccessibleName(tr("优化强度"))
         for label, value in self.INTENSITIES:
             self.intensity_combo.addItem(tr(label), value.value)
         self.intensity_combo.setCurrentIndex(1)
         self.intensity_combo.currentIndexChanged.connect(self._invalidate_preview)
-        selector.addWidget(self.intensity_combo, 1, 1, 1, 2)
+        selector.addWidget(self.intensity_combo, 1, 1)
         self.algorithm_description = QLabel()
         self.algorithm_description.setWordWrap(True)
         self.algorithm_description.setObjectName("Muted")
-        selector.addWidget(self.algorithm_description, 2, 0, 1, 6)
+        selector.addWidget(self.algorithm_description, 3, 0, 1, 2)
+        selector.setColumnStretch(1, 1)
         layout.addWidget(selector_card)
 
         self.summary_label = QLabel(tr("选择算法和强度，然后分析优化。"))
         self.summary_label.setObjectName("OptimizerSummary")
         self.summary_label.setWordWrap(True)
         layout.addWidget(self.summary_label)
-
-        action_row = QHBoxLayout()
-        action_row.addStretch(1)
-        self.analyse_button = QPushButton(tr("分析优化"))
-        self.analyse_button.setProperty("kind", "primary")
-        self.analyse_button.clicked.connect(self._analyse)
-        action_row.addWidget(self.analyse_button)
-        layout.addLayout(action_row)
-
-        self.details_button = QPushButton(tr("详细信息 ▸"))
-        self.details_button.setCheckable(True)
-        self.details_button.toggled.connect(self._toggle_details)
-        layout.addWidget(self.details_button)
 
         self.details_container = QWidget()
         details = QVBoxLayout(self.details_container)
@@ -393,7 +399,7 @@ class MidiOptimizeDialog(QDialog):
         self.global_scope_header = QLabel(tr("允许写入的轨道"))
         scope_layout.addWidget(self.global_scope_header, 0, 0, 1, 2)
         for index, track in enumerate(self.source_tracks):
-            box = QCheckBox(trf(
+            box = ElidedCheckBox(trf(
                 "轨道 {track_id} · {track}",
                 track_id=track.track_id,
                 track=track.display_name,
@@ -402,8 +408,10 @@ class MidiOptimizeDialog(QDialog):
             box.stateChanged.connect(self._invalidate_preview)
             self.track_checks[int(track.track_id)] = box
             scope_layout.addWidget(box, 1 + index // 2, index % 2)
-        self.single_scope_label = QLabel()
-        self.single_scope_label.setWordWrap(True)
+        self.single_scope_label = ElidedLabel()
+        self.single_scope_label.setTextFormat(Qt.PlainText)
+        self.single_scope_label.setProperty("i18nSkipText", True)
+        self.single_scope_label.setProperty("i18nSkipToolTip", True)
         scope_layout.addWidget(
             self.single_scope_label,
             1 + (len(self.source_tracks) + 1) // 2,
@@ -423,18 +431,33 @@ class MidiOptimizeDialog(QDialog):
 
         buttons = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
         self.button_box = buttons
+        self.details_button = buttons.addButton(tr("详细信息 ▸"), QDialogButtonBox.ActionRole)
+        self.details_button.setCheckable(True)
+        self.details_button.toggled.connect(self._toggle_details)
+        self.analyse_button = buttons.addButton(tr("分析优化"), QDialogButtonBox.ActionRole)
+        self.analyse_button.setProperty("kind", "primary")
+        self.analyse_button.clicked.connect(self._analyse)
         self.apply_button = buttons.button(QDialogButtonBox.Apply)
         self.apply_button.setText(tr("应用预览"))
         self.apply_button.setEnabled(False)
         buttons.button(QDialogButtonBox.Cancel).setText(tr("取消"))
         self.apply_button.clicked.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        root.addWidget(dialog_footer(buttons, QDialogButtonBox.Apply))
 
         self.scope_combo.currentIndexChanged.connect(self._scope_changed)
+        self._align_selector_fields()
         self._update_scope_presentation()
         self._toggle_details(False)
         self._reload_algorithms()
+
+    def _align_selector_fields(self) -> None:
+        label_width = max(
+            label.sizeHint().width()
+            for label in (self.scope_field_label, self.algorithm_field_label, self.intensity_field_label)
+        )
+        self.scope_selector.setColumnMinimumWidth(0, label_width)
+        self.algorithm_selector.setColumnMinimumWidth(0, label_width)
 
     def _scope_token(self) -> str:
         return (
@@ -484,6 +507,7 @@ class MidiOptimizeDialog(QDialog):
             tuple(range(self.scope_combo.count())),
         )
         self.scope_combo.blockSignals(False)
+        self.scope_combo.refresh_text_tooltip()
 
     def _scope_changed(self, _index: int = -1) -> None:
         token = str(self.scope_combo.currentData() or "global")
@@ -587,6 +611,7 @@ class MidiOptimizeDialog(QDialog):
             tuple(skipped_item_indexes),
         )
         self.algorithm_combo.blockSignals(False)
+        self.algorithm_combo.refresh_text_tooltip()
         self._algorithm_changed()
 
     def _algorithm_changed(self, _index: int = -1) -> None:
@@ -681,7 +706,20 @@ class MidiOptimizeDialog(QDialog):
         self.details_button.setText(
             tr("详细信息 ▾" if visible else "详细信息 ▸")
         )
-        self.resize(820, 720 if visible else 430)
+        preferred_height = 720 if visible else 430
+        screen = self.screen()
+        if screen is None:
+            self.resize(self.width(), preferred_height)
+            return
+        available = screen.availableGeometry()
+        frame_height = max(hig.CAPTION_HEIGHT, self.frameGeometry().height() - self.height())
+        self.resize(self.width(), min(preferred_height, available.height() - frame_height))
+        if self.isVisible():
+            frame = self.frameGeometry()
+            last_top = max(available.top(), available.bottom() + 1 - frame.height())
+            top = min(max(frame.top(), available.top()), last_top)
+            if top != frame.top():
+                self.move(self.x(), self.y() + top - frame.top())
 
     def _base_config(self) -> OptimizerConfig:
         supported_pitches = {
@@ -812,6 +850,7 @@ class MidiOptimizeDialog(QDialog):
         """Re-render structured preview text after a live locale switch."""
 
         self._populate_scope_combo()
+        self._align_selector_fields()
         self._update_scope_presentation()
         if self.session is not None:
             self._render_analysis_session()

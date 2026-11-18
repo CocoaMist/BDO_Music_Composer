@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSizePolicy,
-    QSlider,
     QSpinBox,
+    QVBoxLayout,
 )
 
 from bdo_music_composer.editor.editor_models import TrackState
@@ -33,6 +33,8 @@ from bdo_music_composer.ui.dialogs.track_settings_dialogs import (
     ClipVelocityBaseDialog,
 )
 from bdo_music_composer.ui.i18n import tr, trf
+from bdo_music_composer.ui.theme import hig_tokens as hig
+from bdo_music_composer.ui.ui_controls import CommitSlider, ElidedLabel, GlyphComboBox
 
 
 class GlobalVelocityGainHostMixin:
@@ -41,21 +43,25 @@ class GlobalVelocityGainHostMixin:
     def _build_global_velocity_gain_control(self) -> QFrame:
         group = QFrame()
         group.setObjectName("ToolbarGlobalGainGroup")
-        layout = QHBoxLayout(group)
-        layout.setContentsMargins(10, 0, 10, 0)
-        layout.setSpacing(7)
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(hig.ITEM_GAP)
 
         self.toolbar_global_gain_group = group
-        self.toolbar_global_gain_label = QLabel(tr("全轨道分贝调整"))
+        self.toolbar_global_gain_label = QLabel(tr("全曲力度"))
         self.toolbar_global_gain_label.setObjectName("ToolbarGlobalGainTitle")
-        self.toolbar_global_gain_mode = QComboBox()
+        self.toolbar_global_gain_mode = GlyphComboBox()
         self.toolbar_global_gain_mode.setObjectName("ToolbarGlobalGainMode")
+        self.toolbar_global_gain_mode.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.toolbar_global_gain_mode.setMinimumWidth(140)
+        self.toolbar_global_gain_mode.setAccessibleName(tr("全曲力度"))
+        self.toolbar_global_gain_label.setBuddy(self.toolbar_global_gain_mode)
         self.toolbar_global_gain_mode.addItem(tr("抬高/降低"), "offset")
         self.toolbar_global_gain_mode.addItem(tr("百分比"), "percent")
-        self.toolbar_global_gain = QSlider(Qt.Horizontal)
+        self.toolbar_global_gain = CommitSlider(Qt.Horizontal)
         self.toolbar_global_gain.setObjectName("ToolbarGlobalGainSlider")
         self.toolbar_global_gain.setRange(-127, 127)
-        self.toolbar_global_gain.setFixedWidth(220)
+        self.toolbar_global_gain.setMinimumWidth(156)
         self.toolbar_global_gain.setEnabled(False)
         self.toolbar_global_gain.setToolTip(
             tr(
@@ -71,6 +77,8 @@ class GlobalVelocityGainHostMixin:
         self.toolbar_global_gain_value.setKeyboardTracking(False)
         self.toolbar_global_gain_value.setAlignment(Qt.AlignCenter)
         self.toolbar_global_gain_value.setFixedWidth(52)
+        self.toolbar_global_gain_value.setAccessibleName(tr("全局力度基数"))
+        self.toolbar_global_gain_value.lineEdit().setAccessibleName(tr("全局力度基数"))
         self.toolbar_global_gain_equalize = QCheckBox(tr("均化"))
         self.toolbar_global_gain_equalize.setObjectName(
             "ToolbarGlobalGainEqualize"
@@ -78,7 +86,6 @@ class GlobalVelocityGainHostMixin:
         self.toolbar_global_gain_equalize.setToolTip(
             tr("按整首曲谱的原始力度关系统一缩放，使调整后的力度落在 0–127。")
         )
-        self._toolbar_global_gain_initial_value = 0
         self._toolbar_global_gain_reference = 0
         self._toolbar_global_gain_track_signature: tuple[object, ...] = ()
         self._toolbar_global_gain_origin_states: list[
@@ -93,7 +100,7 @@ class GlobalVelocityGainHostMixin:
         self.toolbar_global_gain.valueChanged.connect(
             self._preview_toolbar_global_gain
         )
-        self.toolbar_global_gain.sliderReleased.connect(
+        self.toolbar_global_gain.editingFinished.connect(
             self._commit_toolbar_global_gain
         )
         self.toolbar_global_gain_value.editingFinished.connect(
@@ -105,26 +112,32 @@ class GlobalVelocityGainHostMixin:
         self.toolbar_global_gain_mode.currentIndexChanged.connect(
             self._on_toolbar_global_gain_mode_changed
         )
-        layout.addWidget(self.toolbar_global_gain_label)
-        layout.addWidget(self.toolbar_global_gain_mode)
-        layout.addWidget(self.toolbar_global_gain)
-        layout.addWidget(self.toolbar_global_gain_value)
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(hig.ITEM_GAP)
+        mode_row.addWidget(self.toolbar_global_gain_label)
+        mode_row.addWidget(self.toolbar_global_gain_mode, stretch=1)
+        layout.addLayout(mode_row)
+        gain_row = QHBoxLayout()
+        gain_row.setSpacing(hig.ITEM_GAP)
+        gain_row.addWidget(self.toolbar_global_gain, stretch=1)
+        gain_row.addWidget(self.toolbar_global_gain_value)
+        layout.addLayout(gain_row)
         layout.addWidget(self.toolbar_global_gain_equalize)
         return group
 
     def _build_selection_velocity_percent_control(self) -> QFrame:
         group = QFrame()
         group.setObjectName("ToolbarSelectionVelocityGroup")
-        group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        layout = QHBoxLayout(group)
-        layout.setContentsMargins(6, 1, 4, 1)
-        layout.setSpacing(4)
-        self.toolbar_velocity_title = QLabel(tr("力度（分贝）"))
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(0, 8, 0, 8)
+        layout.setSpacing(8)
+        self.toolbar_velocity_title = ElidedLabel(tr("音符力度倍率"))
         self.toolbar_velocity_title.setObjectName(
             "ToolbarSelectionVelocityTitle"
         )
-        self.toolbar_velocity_title.setFixedWidth(70)
-        self.toolbar_velocity_scope = QLabel(tr("请选择轨道或Clip"))
+        self.toolbar_velocity_title.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.toolbar_velocity_scope = ElidedLabel(tr("请选择轨道或Clip"))
+        self.toolbar_velocity_scope.setTextFormat(Qt.PlainText)
         self.toolbar_velocity_scope.setObjectName(
             "ToolbarSelectionVelocityScope"
         )
@@ -133,7 +146,7 @@ class GlobalVelocityGainHostMixin:
         self.toolbar_velocity_scope.setSizePolicy(
             QSizePolicy.Preferred, QSizePolicy.Preferred
         )
-        self.toolbar_velocity_percent = QSlider(Qt.Horizontal)
+        self.toolbar_velocity_percent = CommitSlider(Qt.Horizontal)
         self.toolbar_velocity_percent.setObjectName(
             "ToolbarSelectionVelocityPercent"
         )
@@ -146,6 +159,8 @@ class GlobalVelocityGainHostMixin:
             QSizePolicy.Expanding, QSizePolicy.Fixed
         )
         self.toolbar_velocity_percent.setEnabled(False)
+        self.toolbar_velocity_percent.setAccessibleName(tr("音符力度倍率"))
+        self.toolbar_velocity_title.setBuddy(self.toolbar_velocity_percent)
         self.toolbar_velocity_percent.setToolTip(tr(
             "将所选轨道或Clip的分贝比例烘焙到每个音块；100%可按工程记录恢复。"
         ))
@@ -165,6 +180,10 @@ class GlobalVelocityGainHostMixin:
         self.toolbar_velocity_percent_value.setFixedWidth(62)
         self.toolbar_velocity_percent_value.setKeyboardTracking(False)
         self.toolbar_velocity_percent_value.setEnabled(False)
+        self.toolbar_velocity_percent_value.setAccessibleName(tr("音符力度倍率"))
+        self.toolbar_velocity_percent_value.lineEdit().setAccessibleName(
+            tr("音符力度倍率")
+        )
         self._selection_velocity_drag_origin = None
         self.toolbar_velocity_percent.sliderPressed.connect(
             self._begin_selection_velocity_percent
@@ -172,7 +191,7 @@ class GlobalVelocityGainHostMixin:
         self.toolbar_velocity_percent.valueChanged.connect(
             self._preview_selection_velocity_percent
         )
-        self.toolbar_velocity_percent.sliderReleased.connect(
+        self.toolbar_velocity_percent.editingFinished.connect(
             self._commit_selection_velocity_percent
         )
         self.toolbar_velocity_percent_value.editingFinished.connect(
@@ -180,8 +199,12 @@ class GlobalVelocityGainHostMixin:
         )
         layout.addWidget(self.toolbar_velocity_title)
         layout.addWidget(self.toolbar_velocity_scope)
-        layout.addWidget(self.toolbar_velocity_percent, 1)
-        layout.addWidget(self.toolbar_velocity_percent_value)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        row.addWidget(self.toolbar_velocity_percent, 1)
+        row.addWidget(self.toolbar_velocity_percent_value)
+        layout.addLayout(row)
         return group
 
     def _selection_velocity_items(self) -> tuple[tuple[TrackState, str], ...]:
@@ -263,6 +286,8 @@ class GlobalVelocityGainHostMixin:
         enabled = bool(items)
         self.toolbar_velocity_scope.setText(label)
         self.toolbar_velocity_scope.setToolTip(label)
+        self.toolbar_velocity_percent.setAccessibleDescription(label)
+        self.toolbar_velocity_percent_value.setAccessibleDescription(label)
         self.toolbar_velocity_percent.blockSignals(True)
         self.toolbar_velocity_percent_value.blockSignals(True)
         self.toolbar_velocity_percent.setEnabled(enabled)
@@ -281,6 +306,10 @@ class GlobalVelocityGainHostMixin:
         self.toolbar_velocity_percent_value.blockSignals(False)
 
     def _begin_selection_velocity_percent(self) -> None:
+        # Some styles update a groove-click value before sliderPressed fires.
+        # Keep the snapshot taken by the first preview for the whole gesture.
+        if self._selection_velocity_drag_origin is not None:
+            return
         items = self._selection_velocity_items()
         tracks_by_id = {
             int(track.track_id): track for track, _clip_id in items
@@ -427,9 +456,6 @@ class GlobalVelocityGainHostMixin:
             return
         if self._toolbar_global_gain_initial_states is not None:
             return
-        self._toolbar_global_gain_initial_value = int(
-            self.toolbar_global_gain.value()
-        )
         self._toolbar_global_gain_initial_states = [
             (track, self._velocity_track_state(track)) for track in self.tracks
         ]
@@ -440,9 +466,6 @@ class GlobalVelocityGainHostMixin:
             if not self.toolbar_global_gain.isEnabled() or not self.tracks:
                 return
             # A groove click changes value before sliderPressed fires.
-            self._toolbar_global_gain_initial_value = int(
-                self._toolbar_global_gain_reference
-            )
             self._toolbar_global_gain_initial_states = [
                 (track, self._velocity_track_state(track))
                 for track in self.tracks

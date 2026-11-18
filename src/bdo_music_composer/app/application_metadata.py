@@ -9,8 +9,10 @@ from __future__ import annotations
 
 
 APP_NAME = "BDO Music Composer"
-APP_VERSION = "1.3.6.2"
-APP_DISPLAY_VERSION = "1.3.6.2"
+APP_AUTHOR_NAME = "薄荷可可"
+APP_VERSION = "2026.11.0.1"
+APP_DISPLAY_VERSION = APP_VERSION
+APP_WEBSITE_URL = "https://bdomusic.bxdy.org/"
 WINDOWS_APP_USER_MODEL_ID = "CocoaMist.BDOMusicComposer.1"
 
 # The implementation and catalog remain available for internal validation.
@@ -75,9 +77,11 @@ UPDATE_SIGNING_RSA_MODULUS_HEX = (
 
 
 __all__ = [
+    "APP_AUTHOR_NAME",
     "APP_NAME",
     "APP_DISPLAY_VERSION",
     "APP_VERSION",
+    "APP_WEBSITE_URL",
     "GITHUB_API_VERSION",
     "GITHUB_LATEST_RELEASE_API_URL",
     "GITHUB_OWNER",

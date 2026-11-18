@@ -6,20 +6,22 @@ from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
-    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 from shiboken6 import isValid
 
+from bdo_music_composer.ui.floating_panel_qt import FloatingPanelDialog
 from bdo_music_composer.ui.i18n import tr
+from bdo_music_composer.ui.theme import hig_tokens as hig
+from bdo_music_composer.ui.theme.symbols import FluentSymbol, draw_symbol
+from bdo_music_composer.ui.ui_controls import PillButton
 from .editor_shortcuts import (
     DRAW_CONTEXT,
     EDITOR_GESTURE_SPECS,
@@ -30,6 +32,7 @@ from .editor_shortcuts import (
     HUD_CONTEXT_COPY,
     SELECT_CONTEXT,
     SELECTION_CONTEXT,
+    TIMELINE_HELP_GROUPS,
 )
 
 
@@ -215,14 +218,18 @@ class EditorShortcutHud(QFrame):
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)
         self.layout().activate()
-        self.setFixedHeight(self.sizeHint().height())
+        height = self.sizeHint().height()
 
         ruler_height = int(getattr(self._canvas, "RULER_H", 0))
+        y = ruler_height + 8
+        if y + height + self._EDGE_MARGIN > self._canvas.height():
+            self.hide()
+            return
+        self.setFixedHeight(height)
         x = max(
             key_width + self._EDGE_MARGIN,
             canvas_width - width - self._EDGE_MARGIN,
         )
-        y = ruler_height + 8
         self.move(x, y)
         self.show()
         self.raise_()
@@ -236,30 +243,56 @@ class EditorShortcutHud(QFrame):
         return super().eventFilter(watched, event)
 
 
-class EditorShortcutHelpDialog(QDialog):
-    """Complete, registry-backed shortcut reference for the note editor."""
+class EditorShortcutHelpDialog(FloatingPanelDialog):
+    """Searchable shortcut reference for the timeline or the note editor."""
 
-    def __init__(self, parent: QWidget) -> None:
+    def __init__(self, parent: QWidget, *, timeline: bool = False) -> None:
         super().__init__(parent)
         self.setObjectName("EditorShortcutHelpDialog")
-        self.setWindowTitle(tr("音符编辑器快捷键"))
-        self.setMinimumSize(620, 520)
+        title_text = tr("时间轴快捷键" if timeline else "音符编辑器快捷键")
+        self.setWindowTitle(title_text)
+        available = parent.screen().availableGeometry()
+        width = min(740 if timeline else 620, max(320, available.width() - 40))
+        height = min(650 if timeline else 560, max(240, available.height() - 56))
+        self.resize(width, height)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(10)
+        root.setContentsMargins(20, 16, 20, 18)
+        root.setSpacing(12)
 
-        title = QLabel(tr("音符编辑器快捷键"))
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        icon = QLabel()
+        icon.setObjectName("ShortcutHelpIcon")
+        icon.setFixedSize(34, 34)
+        icon.setAlignment(Qt.AlignCenter)
+        ratio = self.devicePixelRatioF()
+        pixmap = draw_symbol(FluentSymbol.KEYBOARD, hig.ACCENT, round(20 * ratio))
+        pixmap.setDevicePixelRatio(ratio)
+        icon.setPixmap(pixmap)
+        header.addWidget(icon)
+        title = QLabel(title_text)
         title.setObjectName("ShortcutHelpTitle")
-        root.addWidget(title)
-        scope_note = QLabel(
-            tr(
-                "音块快捷键仅在钢琴卷帘画布获得焦点时生效；输入框保留文本编辑快捷键。F1 可随时打开本面板。"
+        title.setWordWrap(True)
+        header.addWidget(title, 1)
+        close = PillButton("", "ghost", FluentSymbol.CLOSE)
+        close.setObjectName("FloatingPanelClose")
+        close.setFixedSize(32, 32)
+        close.setAutoDefault(False)
+        close.setAccessibleName(tr("关闭窗口"))
+        close.setToolTip(tr("关闭窗口"))
+        close.clicked.connect(self.reject)
+        header.addWidget(close, 0, Qt.AlignTop)
+        root.addLayout(header)
+        if not timeline:
+            scope_note = QLabel(
+                tr(
+                    "音块快捷键仅在钢琴卷帘画布获得焦点时生效；输入框保留文本编辑快捷键。F1 可随时打开本面板。"
+                )
             )
-        )
-        scope_note.setObjectName("ShortcutHelpScopeNote")
-        scope_note.setWordWrap(True)
-        root.addWidget(scope_note)
+            scope_note.setObjectName("ShortcutHelpScopeNote")
+            scope_note.setWordWrap(True)
+            root.addWidget(scope_note)
 
         self.search_edit = QLineEdit()
         self.search_edit.setObjectName("ShortcutHelpSearch")
@@ -277,59 +310,78 @@ class EditorShortcutHelpDialog(QDialog):
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(2, 2, 8, 2)
         content_layout.setSpacing(10)
-        self.shortcut_rows: list[tuple[QLabel, QLabel]] = []
+        self.no_matches = QLabel(tr("没有匹配的结果"))
+        self.no_matches.setObjectName("ShortcutHelpScopeNote")
+        self.no_matches.setAlignment(Qt.AlignCenter)
+        self.no_matches.hide()
+        content_layout.addWidget(self.no_matches)
         self.shortcut_groups: list[
             tuple[QFrame, QLabel, list[tuple[QLabel, QLabel]]]
         ] = []
 
-        entries = (*EDITOR_SHORTCUT_SPECS, *EDITOR_GESTURE_SPECS)
-        for group_source in HELP_GROUP_SOURCES:
+        if timeline:
+            groups = [
+                (heading, [(tr(key), tr(action)) for key, action in rows])
+                for heading, rows in TIMELINE_HELP_GROUPS
+            ]
+        else:
+            entries = (*EDITOR_SHORTCUT_SPECS, *EDITOR_GESTURE_SPECS)
+            groups = [
+                (heading, [
+                    (tr(entry.key_source), self._editor_action_text(entry))
+                    for entry in entries if entry.group_source == heading
+                ])
+                for heading in HELP_GROUP_SOURCES
+            ]
+
+        group_layout = QHBoxLayout()
+        group_layout.setSpacing(10)
+        columns = (QVBoxLayout(), QVBoxLayout()) if timeline and width >= 680 else (QVBoxLayout(),)
+        for column in columns:
+            column.setSpacing(10)
+            group_layout.addLayout(column, 1)
+        content_layout.addLayout(group_layout)
+        for index, (group_source, rows) in enumerate(groups):
             group = QFrame()
             group.setObjectName("ShortcutHelpGroup")
             grid = QGridLayout(group)
-            grid.setContentsMargins(10, 8, 10, 9)
+            grid.setContentsMargins(12, 10, 12, 11)
             grid.setHorizontalSpacing(12)
-            grid.setVerticalSpacing(5)
+            grid.setVerticalSpacing(4)
+            grid.setColumnStretch(1, 1)
             heading = QLabel(tr(group_source))
             heading.setObjectName("ShortcutHelpGroupTitle")
             grid.addWidget(heading, 0, 0, 1, 2)
-            row = 1
             group_rows: list[tuple[QLabel, QLabel]] = []
-            for entry in entries:
-                if entry.group_source != group_source:
-                    continue
-                key_label = QLabel(tr(entry.key_source))
+            for row, (key_text, action_text) in enumerate(rows, 1):
+                key_label = QLabel(key_text)
                 key_label.setObjectName("ShortcutHelpKey")
-                if (
-                    isinstance(entry, EditorShortcutSpec)
-                    and entry.scope == GLOBAL_SCOPE
-                ):
-                    action_text = (
-                        f"{tr(entry.action_source)} · {tr('全窗口生效')}"
-                    )
-                else:
-                    action_text = tr(entry.action_source)
                 action_label = QLabel(action_text)
                 action_label.setObjectName("ShortcutHelpAction")
                 action_label.setWordWrap(True)
-                grid.addWidget(key_label, row, 0)
+                grid.addWidget(key_label, row, 0, Qt.AlignLeft | Qt.AlignVCenter)
                 grid.addWidget(action_label, row, 1)
-                self.shortcut_rows.append((key_label, action_label))
                 group_rows.append((key_label, action_label))
-                row += 1
             self.shortcut_groups.append((group, heading, group_rows))
-            content_layout.addWidget(group)
-        content_layout.addStretch(1)
+            column_index = 1 if len(columns) == 2 and index == len(groups) - 1 else 0
+            columns[column_index].addWidget(group)
+        for column in columns:
+            column.addStretch(1)
+
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
+        self.search_edit.setFocus()
 
-        close_button = QPushButton(tr("关闭"))
-        close_button.setObjectName("ShortcutHelpClose")
-        close_button.clicked.connect(self.close)
-        root.addWidget(close_button, 0, Qt.AlignRight)
+    @staticmethod
+    def _editor_action_text(entry) -> str:
+        action = tr(entry.action_source)
+        if isinstance(entry, EditorShortcutSpec) and entry.scope == GLOBAL_SCOPE:
+            return f"{action} · {tr('全局快捷键')}"
+        return action
 
     def _filter_shortcuts(self, query: str) -> None:
         needle = str(query).strip().casefold()
+        match_count = 0
         for group, heading, rows in self.shortcut_groups:
             group_match = bool(needle) and needle in heading.text().casefold()
             visible_count = 0
@@ -340,6 +392,8 @@ class EditorShortcutHelpDialog(QDialog):
                 action_label.setVisible(visible)
                 visible_count += int(visible)
             group.setVisible(visible_count > 0)
+            match_count += visible_count
+        self.no_matches.setVisible(match_count == 0)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key_Escape:

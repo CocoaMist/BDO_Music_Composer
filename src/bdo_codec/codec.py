@@ -16,7 +16,7 @@ from .model import (
     BDO_VERSION, HEADER_SIZE, MAX_NOTES_PER_TRACK, NAME_FIELD_SIZE,
     BdoDecodeError, BdoDocument, BdoEncodeError, BdoHeader,
     BdoInstrumentGroup, BdoNote, BdoTrack, BdoTrackSettings,
-    CodecDiffEntry, CodecIssue, UnsafeOpaqueDataError,
+    BdoUnsupportedVersionError, CodecDiffEntry, CodecIssue, UnsafeOpaqueDataError,
 )
 
 
@@ -75,7 +75,7 @@ def decode_score(data: bytes) -> BdoDocument:
         raise _fail("BDO score is shorter than the version field")
     version = VERSION_RECORD.unpack_from(data)[0]
     if version != BDO_VERSION:
-        raise _fail(f"unsupported BDO score version {version}; expected {BDO_VERSION}")
+        raise BdoUnsupportedVersionError(version)
     ciphertext = data[4:]
     if not ciphertext or len(ciphertext) % 8:
         raise _fail("encrypted BDO payload must be non-empty and 8-byte aligned", 4)

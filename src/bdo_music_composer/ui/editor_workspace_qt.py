@@ -15,12 +15,14 @@ class EditorWorkspaceHostMixin:
         return tuple(
             editor
             for editor in self._note_editors.values()
-            if editor.isVisible()
+            if editor.isVisible() and not editor.property("workbenchEmbedded")
         )
 
     def _tile_note_editors(self) -> None:
         """Tile open editors within the current screen's usable geometry."""
-
+        if hasattr(self, "workbench"):
+            for editor in tuple(self.workbench.adapters):
+                self.workbench.pop_out(editor)
         editors = self._visible_note_editors()
         if not editors:
             return
@@ -65,6 +67,8 @@ class EditorWorkspaceHostMixin:
         if dialog not in self._note_editors.values():
             return
         self.active_transcription_editor = dialog
+        if hasattr(self, "workbench"):
+            self.workbench.activate_editor(dialog)
         self._refresh_transcription_workspace()
 
     def _synchronize_timeline_markers(self) -> None:
@@ -80,6 +84,11 @@ class EditorWorkspaceHostMixin:
         editor = self.active_transcription_editor
         if editor is None or not editor.isVisible() or not editor.isActiveWindow():
             return False
+        if editor.property("workbenchEmbedded"):
+            focus = QApplication.focusWidget()
+            note_page = self.workbench.adapters[editor].note_page
+            if focus is None or not (editor.isAncestorOf(focus) or note_page.isAncestorOf(focus)):
+                return False
         stack = getattr(editor, "redo_stack" if redo else "undo_stack", ())
         if not stack:
             # External Clip scaling synchronizes the open editor and clears
@@ -92,7 +101,7 @@ class EditorWorkspaceHostMixin:
     def _project_history_is_safe(self) -> bool:
         dirty = next((
             editor for editor in self._note_editors.values()
-            if editor.isVisible()
+            if (editor.isVisible() or editor.property("workbenchEmbedded"))
             and (
                 editor.edited_notes() != editor.last_applied
                 or editor.has_transcription_staging()
@@ -100,6 +109,8 @@ class EditorWorkspaceHostMixin:
         ), None)
         if dirty is None:
             return True
+        if hasattr(self, "workbench"):
+            self.workbench.activate_editor(dirty)
         dirty.raise_()
         dirty.activateWindow()
         self.show_toast(
@@ -121,6 +132,8 @@ class EditorWorkspaceHostMixin:
     def _close_all_note_editors(self) -> None:
         for editor in tuple(self._note_editors.values()):
             editor.close()
+            if hasattr(self, "workbench"):
+                self.workbench.editor_finished(editor)
         self._note_editors.clear()
         self.active_transcription_editor = None
 

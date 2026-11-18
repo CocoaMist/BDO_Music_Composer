@@ -1,6 +1,37 @@
 """Source-language catalog additions for the authoring assistant."""
 
-CREATION_TRANSLATIONS = {
+from bdo_music_composer.ui.score_agent_settings_translations import SCORE_AGENT_SETTINGS_TRANSLATIONS
+from bdo_music_composer.ui.score_agent_workspace_translations import SCORE_AGENT_WORKSPACE_TRANSLATIONS
+
+
+CREATION_TRANSLATIONS = SCORE_AGENT_SETTINGS_TRANSLATIONS | SCORE_AGENT_WORKSPACE_TRANSLATIONS | {
+    "创作 Agent": ("Composition Agent", "作曲エージェント", "작곡 에이전트"),
+    "发送后，模型会收到你的指令及当前选区的必要曲谱信息。": ("Sending shares your instruction and relevant score details from the current selection with the model.", "送信すると、指示と現在の選択範囲に必要な楽譜情報がモデルに渡ります。", "보내기를 누르면 지시와 현재 선택 영역의 필요한 악보 정보가 모델에 전달됩니다."),
+    "创作对话": ("Composition conversation", "作曲の会話", "작곡 대화"),
+    "例如，分析选区，或给主旋律加一段伴奏": ("For example, analyze the selection or accompany the melody", "例：選択範囲を分析、主旋律に伴奏を追加", "예: 선택 범위 분석 또는 주선율에 반주 추가"),
+    "给 Agent 的指令": ("Instruction for the agent", "エージェントへの指示", "에이전트 지시"),
+    "模型连接": ("Model connection", "モデル接続", "모델 연결"),
+    "发送": ("Send", "送信", "보내기"),
+    "你": ("You", "あなた", "나"),
+    "停止 Agent": ("Stop agent", "エージェントを停止", "에이전트 중지"),
+    "Agent 正在思考…": ("Agent is thinking…", "エージェントが検討中…", "에이전트가 생각 중…"),
+    "正在检查曲谱…": ("Checking the score…", "楽譜を確認中…", "악보 확인 중…"),
+    "本轮 Agent 已停止。": ("The agent stopped this turn.", "今回の処理を停止しました。", "에이전트가 이번 작업을 중지했습니다."),
+    "工程或选区已变化，请重新打开创作助手。": ("The project or selection changed. Reopen Creation Assistant.", "プロジェクトまたは選択範囲が変わりました。創作アシスタントを開き直してください。", "프로젝트 또는 선택 영역이 변경되었습니다. 창작 도우미를 다시 여세요."),
+    "请检查模型连接设置。": ("Check the model connection settings.", "モデル接続設定を確認してください。", "모델 연결 설정을 확인하세요."),
+    "模型服务未接受此密钥。": ("The model service rejected the API key.", "モデルサービスが API キーを拒否しました。", "모델 서비스가 API 키를 거부했습니다."),
+    "模型服务余额不足或需要账单设置。": ("The model service requires a balance or billing setup.", "モデルサービスの残高または請求設定を確認してください。", "모델 서비스 잔액 또는 결제 설정을 확인하세요."),
+    "模型服务正在限流，请稍后再试。": ("The model service is rate limited. Try again shortly.", "モデルサービスのレート制限に達しました。少し待って再試行してください。", "모델 서비스의 요청 한도에 도달했습니다. 잠시 후 다시 시도하세요."),
+    "Agent 等待模型或工具超时。": ("The agent timed out waiting for the model or a tool.", "モデルまたはツールの待機時間を超えました。", "모델 또는 도구를 기다리다 시간이 초과되었습니다."),
+    "模型返回了无法处理的结果。": ("The model returned an unreadable response.", "モデルの応答を処理できませんでした。", "모델이 처리할 수 없는 응답을 반환했습니다."),
+    "本轮工具调用已达上限，请缩小任务范围。": ("This turn reached the tool call limit. Try a smaller task.", "今回のツール呼び出し上限に達しました。範囲を絞ってください。", "이번 작업에서 도구 호출 한도에 도달했습니다. 범위를 줄여 다시 시도하세요."),
+    "这次请求超出了模型支持的范围。": ("This request exceeds the supported model limits.", "今回の依頼はモデルが対応する範囲を超えています。", "이 요청은 모델이 지원하는 범위를 벗어납니다."),
+    "Agent 连接失败，请检查模型服务。": ("The agent could not reach the model service. Check the connection.", "エージェントがモデルサービスに接続できません。接続を確認してください。", "에이전트가 모델 서비스에 연결하지 못했습니다. 연결을 확인하세요."),
+    "调式": ("Scale mode", "旋法", "선법"),
+    "候选方案": ("Candidate", "候補", "후보"),
+    "重塑已有力度": ("Reshape existing dynamics", "既存の強弱を作り直す", "기존 셈여림 재구성"),
+    "同时调整音长": ("Also shape note lengths", "音長も調整", "음 길이도 조정"),
+    "记录选择（仅本机，不含曲谱）": ("Keep choice locally (no score)", "選択を端末内に記録（楽譜は含めない）", "선택을 로컬에 기록 (악보 제외)"),
     "和声采用整小节延音，保留旋律空间。": ("Sustained full-bar harmony leaves space for the melody.", "小節全体に和音を伸ばし、旋律の余地を残します。", "마디 전체에 화음을 유지해 멜로디의 공간을 남깁니다."),
     "和声采用半小节脉动，增加节拍推动。": ("Half-bar chord pulses add rhythmic movement.", "半小節ごとの和音で拍の推進力を加えます。", "반 마디마다 화음을 연주해 리듬의 추진력을 더합니다."),
     "和声采用分解织体，让声部逐音流动。": ("Arpeggiated harmony moves through individual chord tones.", "分散和音で声部を一音ずつ流れるように奏でます。", "화음을 한 음씩 펼쳐 성부를 유연하게 이어 갑니다."),
@@ -53,6 +84,13 @@ CREATION_TRANSLATIONS = {
     "选择要应用的声部或改动": ("Choose Parts or Changes to Apply", "適用する声部や変更を選択", "적용할 성부 또는 변경 선택"),
     "试听原稿": ("Audition Original", "原稿を試聴", "원본 듣기"),
     "试听所选建议": ("Audition Selected Changes", "選択した提案を試聴", "선택한 제안 듣기"),
+    "原稿": ("Original", "原稿", "원본"),
+    "所选建议": ("Selected changes", "選択した提案", "선택한 변경"),
+    "无音符": ("No notes", "ノートなし", "음표 없음"),
+    "{count} 音符 · 力度 {range}": ("{count} notes · velocity {range}", "{count} ノート · ベロシティ {range}", "음표 {count}개 · 벨로시티 {range}"),
+    "琥珀色标出改动，底部短线显示力度。": ("Amber marks changes. The bottom lane shows velocities.", "琥珀色は変更箇所を示し、下のレーンはベロシティを表示します。", "호박색은 변경을, 아래 레인은 벨로시티를 표시합니다."),
+    "第 {number} 小节": ("Bar {number}", "第 {number} 小節", "{number}마디"),
+    "第 {start}–{end} 小节": ("Bars {start}–{end}", "第 {start}–{end} 小節", "{start}–{end}마디"),
     "使用当前试听音源；最终效果请在游戏内复核。": ("Uses the current preview source. Check the final performance in the game.", "現在の試聴音源を使用します。最終的な演奏はゲーム内で確認してください。", "현재 미리 듣기 음원을 사용합니다. 최종 효과는 게임 안에서 확인하세요."),
     "仅在本机记录这次选择，供后续改进（不含曲谱）": ("Keep this choice locally for future improvements (no score content)", "改善のため今回の選択を端末内に記録（楽譜は含めない）", "추후 개선을 위해 이 선택을 로컬에 기록 (악보 제외)"),
     "记录：这版不合适": ("Record: This Version Doesn't Fit", "記録：この案は合わない", "기록: 이 버전은 맞지 않음"),

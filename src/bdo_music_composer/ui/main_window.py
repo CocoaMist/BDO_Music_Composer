@@ -92,7 +92,6 @@ try:
         QFrame,
         QGridLayout,
         QHBoxLayout,
-        QInputDialog,
         QLabel,
         QLineEdit,
         QListWidget,
@@ -160,7 +159,9 @@ from bdo_music_composer.audio.bdo_audio_research import sample_coverage_for_trac
 from bdo_music_composer.audio.bdo_audio_validation import (  # noqa: E402
     verified_instrument_articulations,
 )
-from bdo_music_composer.export.bdo_score import read_bdo_score, read_score  # noqa: E402
+from bdo_music_composer.export.bdo_score import (  # noqa: E402
+    BdoUnsupportedVersionError, read_score, snapshot_from_decoded_score,
+)
 from bdo_music_composer.export.bdo_validation import (  # noqa: E402
     ValidationContext,
     ValidationIssue,
@@ -199,9 +200,8 @@ from bdo_music_composer.editor.editor_models import (  # noqa: E402
 )
 from bdo_music_composer.editor.preview_midi_writer import build_filtered_midi  # noqa: E402
 from bdo_music_composer.editor.arrangement_clip import (  # noqa: E402
-    clip_editor_notes,
-    clip_editor_scope,
     default_empty_clip,
+    prepare_clip_editor,
     project_track_notes,
     reconcile_track_clips_after_note_edit,
     track_clips,
@@ -297,9 +297,15 @@ from bdo_music_composer.ui.timeline_toolbar_qt import (  # noqa: E402
     bind_arrangement_tool_buttons,
     build_arrangement_tool_buttons,
     build_timeline_popup_buttons,
-    build_timeline_view_buttons,
+    edit_reference_audio_offset,
 )
 from bdo_music_composer.ui.workspace_tempo_qt import WorkspaceTempoHostMixin  # noqa: E402
+from bdo_music_composer.ui.workspace_usage_qt import (  # noqa: E402
+    WorkspaceUsageHostMixin,
+    mark_startup_usage_failure,
+)
+from bdo_music_composer.ui.workspace_preview_source_qt import WorkspacePreviewSourceMixin  # noqa: E402
+from bdo_music_composer.ui.workspace_reference_playback_qt import WorkspaceReferencePlaybackMixin  # noqa: E402
 from bdo_music_composer.ui.ui_controls import (  # noqa: E402
     ElidedLabel,
     PillButton,
@@ -319,7 +325,6 @@ from bdo_music_composer.ui.dialogs.optimizer_dialog import (  # noqa: E402
 )
 from bdo_music_composer.audio.reference_audio_controller import (  # noqa: E402
     ReferenceAudioController,
-    synchronize_reference_audio,
 )
 from bdo_music_composer.ui.transcription.transcription_workers import (  # noqa: E402
     SamplePackPrepareWorker,
@@ -341,7 +346,6 @@ from bdo_music_composer.ui.theme.main_window_style import MainWindowStyleMixin  
 from bdo_music_composer.ui.ui_preferences_qt import WorkspaceUiPreferenceBinding  # noqa: E402
 from bdo_music_composer.ui.editor.editor_articulation_data import (  # noqa: E402
     BDO_ARTICULATIONS,
-    articulation_display_value,
 )
 from bdo_music_composer.ui.transcription_ui_helpers import (  # noqa: E402
     transcription_cleanup_ui_labels as _transcription_cleanup_ui_labels,
@@ -368,9 +372,11 @@ from bdo_music_composer.app.home_catalog import (  # noqa: E402
     scan_game_scores,
     scan_local_projects,
 )
+from bdo_music_composer.ui.home_downloads_qt import HomeDownloadsPage  # noqa: E402
 from bdo_music_composer.ui.home_widgets import (  # noqa: E402
     HOME_BACKGROUND_IMAGE,
     HOME_INSTRUMENT_IDS_ROLE,
+    APP_ICON_IMAGE,
     SHAI_ENSEMBLE_MARK_IMAGE,
     EnsembleCapacityBadge,
     HomeBackdrop,
@@ -380,9 +386,16 @@ from bdo_music_composer.ui.home_widgets import (  # noqa: E402
     HomeIdentityBadge,
     HomeLibrarySurface,
     HomeLibraryTabs,
+    HomeListWidget,
 )
-from bdo_music_composer.ui.page_transition_qt import StackedPageCrossfade  # noqa: E402
-from bdo_music_composer.ui.startup_widgets import StartupReveal as _StartupReveal  # noqa: E402
+from bdo_music_composer.ui.page_transition_qt import (  # noqa: E402
+    MOTION_CONFIG_KEY, MOTION_PROPERTY, NavigationCue, StackedPageTransition,
+)
+from bdo_music_composer.ui.score_library_downloads import (  # noqa: E402
+    ScoreLibraryDownload,
+    ScoreLibraryDownloads,
+)
+from bdo_music_composer.ui.startup_widgets import FirstVisiblePaint, place_startup_window  # noqa: E402
 from bdo_music_composer.project.project_persistence import (  # noqa: E402
     AutosaveRequest,
     ProjectMetadataSnapshot,
@@ -473,6 +486,10 @@ from bdo_music_composer.audio.bdo_sample_pack import (  # noqa: E402
     SamplePackError,
     extract_sample_pack,
 )
+from bdo_music_composer.ui.track_properties_qt import apply_track_fx, apply_track_pitch
+from bdo_music_composer.ui.workbench_qt import ComposerWorkbench
+from bdo_music_composer.ui.theme import hig_tokens as hig
+from bdo_music_composer.ui.window_chrome_qt import ScoreTitleEdit, WindowChrome, WorkspaceSurface
 from bdo_music_composer.ui.i18n import (  # noqa: E402
     defer_tr,
     install_localizer,
@@ -485,6 +502,7 @@ from bdo_music_composer.ui.i18n import (  # noqa: E402
 )
 from bdo_music_composer.ui.theme.fluent_theme import (  # noqa: E402
     FluentSymbol,
+    enable_caption_focus_icons,
     build_fluent_stylesheet,
     configure_widget_style,
     fluent_icon_size,
@@ -503,8 +521,13 @@ from bdo_music_composer.ui.self_update_qt import (  # noqa: E402
 )
 from bdo_music_composer.ui.self_update_host import SelfUpdateHostMixin  # noqa: E402
 from bdo_music_composer.update.preferences import update_preferences  # noqa: E402
-from bdo_music_composer.ui.dialogs.acknowledgements_dialog import AcknowledgementsDialog  # noqa: E402
+from bdo_music_composer.ui.dialogs.about_dialog import AboutDialog  # noqa: E402
+from bdo_music_composer.ui.dialogs.composer_prompt import choose_item, choose_prompt, prompt_text  # noqa: E402
+from bdo_music_composer.ui.dialogs.feedback_dialog import FeedbackDialog  # noqa: E402
 from bdo_music_composer.ui.dialogs.release_notes_dialog import ReleaseNotesDialog  # noqa: E402
+from bdo_music_composer.ui.feedback_status_qt import FeedbackStatusTracker  # noqa: E402
+from bdo_music_composer.ui.feedback_toolbar_qt import FeedbackToolbarButton  # noqa: E402
+from bdo_music_composer.ui.floating_panel_qt import exec_floating_panel  # noqa: E402
 from bdo_music_composer.app.conversion_validation_controller import (  # noqa: E402
     ConversionValidationController,
 )
@@ -528,7 +551,7 @@ from bdo_music_composer.ui.performance_probe_qt import (  # noqa: E402
     install_ui_performance_probe,
 )
 from bdo_music_composer.ui.workspace_refresh_qt import (  # noqa: E402
-    apply_workspace_refresh,
+    apply_workspace_refresh, sync_timeline_viewport_controls,
 )
 from bdo_music_composer.project.project_lifecycle_controller import (  # noqa: E402
     ProjectLifecycleController,
@@ -544,10 +567,6 @@ from bdo_music_composer.transcription.transcription_workspace_controller import 
     TranscriptionAnalysisCoordinator,
     TranscriptionReviewController,
 )
-
-# Compact command rails retain every action through icons and accessible names.
-MAIN_VERBOSE_CONTROLS_MIN_WIDTH = 1560
-
 
 decode_marnian_instrument = decode_serialized_game_instrument_id
 
@@ -718,12 +737,17 @@ class MidiToBdoWindow(
     TrackOrderingMixin,
     TimelineVelocityCurveHostMixin,
     WorkspaceTempoHostMixin,
+    WorkspaceUsageHostMixin,
+    WorkspacePreviewSourceMixin,
+    WorkspaceReferencePlaybackMixin,
     GlobalVelocityGainHostMixin,
     TimelineValidationHostMixin,
     SelfUpdateHostMixin,
     MainWindowStyleMixin,
     QMainWindow,
 ):
+    _usage_config_path = CONFIG_PATH
+
     @property
     def transcription_assist_review_undo(
         self,
@@ -1019,12 +1043,12 @@ class MidiToBdoWindow(
         self.setAcceptDrops(True)
 
         self.config = load_config()
+        self.setProperty(MOTION_PROPERTY, self.config.get(MOTION_CONFIG_KEY) is not False)
         self.update_settings = update_preferences(self.config)
         configured_owner_id, configured_character_name = owner_identity(self.config)
         self.language = str(self.config.get("language", "auto"))
         self.owner_id = configured_owner_id
         self.source_format = "midi"
-        self.bdo_source_snapshot = None
         self.bdo_source_document = None
         self.tracks: list[TrackState] = []
         self.lyric_events: list[dict] = []
@@ -1072,7 +1096,6 @@ class MidiToBdoWindow(
             "载入音频，然后分析"
         )
         self.transcription_ui_status = str(self._transcription_ui_status_spec)
-        self.pending_transcription_review_payload: dict = {}
         self.selected_track: TrackState | None = None
         self.bpm = 120
         self.time_sig = 4
@@ -1096,10 +1119,6 @@ class MidiToBdoWindow(
         self.reference_last_resync_at = 0.0
         self.last_reported_underruns = 0
         self.process_metrics_sampler = ProcessMetricsSampler()
-        self.process_metrics_timer = QTimer(self)
-        self.process_metrics_timer.setInterval(1000)
-        self.process_metrics_timer.setTimerType(Qt.VeryCoarseTimer)
-        self.process_metrics_timer.timeout.connect(self._update_process_metrics)
         self.output_dir_path = str(
             self.config.get("output_dir", "") or DEFAULT_OUTDIR
         )
@@ -1159,10 +1178,15 @@ class MidiToBdoWindow(
         self.project_save_shortcut.activated.connect(self._save_current_project)
         self.project_save_as_shortcut = QShortcut(QKeySequence.SaveAs, self)
         self.project_save_as_shortcut.activated.connect(self._save_project_as)
+        self._project_window_shortcuts = (
+            self.project_undo_shortcut, self.project_redo_shortcut,
+            self.project_save_shortcut, self.project_save_as_shortcut,
+        )
+        self._library_shortcut_states: tuple[bool, ...] | None = None
         self._apply_style()
+        self._sync_caption_button_widths()
         self._sync_preview_state()
-        self._update_process_metrics()
-        self.process_metrics_timer.start()
+        self._update_ensemble_metric()
         self.self_update_controller = SelfUpdateController(
             self.config,
             lambda: save_config(self.config),
@@ -1180,76 +1204,88 @@ class MidiToBdoWindow(
         QTimer.singleShot(25_000, self._start_background_update)
 
     def _build_ui(self) -> None:
+        self.online_score_library_page: QWidget | None = None
+        self._library_return_page: QWidget | None = None
+        self.score_library_downloads = ScoreLibraryDownloads(self)
+        self.score_library_downloads.finished.connect(self._notify_score_library_download)
         central = QWidget()
         central.setObjectName("Root")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        # Fixed toolbar frames a full-bleed timeline workspace.
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        root.addWidget(self._build_toolbar())
+        self.workspace_surface = WorkspaceSurface()
+        root.addWidget(self._build_toolbar(self.workspace_surface))
 
-        self.page_stack = QStackedWidget()
-        self.page_stack.setObjectName("MainPages")
-        self.home_page = self._build_home_page()
+        self.page_stack = self.workspace_surface.pages
+        self.home_page = self._home_with_usage_welcome(self._build_home_page())
         self.workspace_page = QWidget()
         self.workspace_page.setObjectName("WorkspacePage")
         workspace_layout = QVBoxLayout(self.workspace_page)
         workspace_layout.setContentsMargins(0, 0, 0, 0)
         workspace_layout.setSpacing(0)
         self._create_workspace_status_state()
-        workspace_layout.addWidget(self._build_timeline_panel(), stretch=1)
+        timeline_panel = self._build_timeline_panel()
+        self.workbench = ComposerWorkbench(self, timeline_panel)
+        workspace_layout.addWidget(self.workbench, stretch=1)
         workspace_layout.addWidget(self._build_performance_strip())
         self.page_stack.addWidget(self.home_page)
         self.page_stack.addWidget(self.workspace_page)
-        self.main_page_transition = StackedPageCrossfade(self.page_stack)
-        root.addWidget(self.page_stack, stretch=1)
+        self.main_page_transition = StackedPageTransition(
+            self.page_stack, self.toolbar_home_btn.parentWidget(),
+        )
+        root.addWidget(self.workspace_surface, stretch=1)
         self._refresh_home()
         self._set_home_toolbar_mode(True)
 
-    def _build_toolbar(self) -> QWidget:
+    def _build_toolbar(self, workspace: WorkspaceSurface) -> QWidget:
         bar = QFrame()
         bar.setObjectName("Toolbar")
-        bar.setFixedHeight(44)
+        bar.setFixedHeight(hig.CAPTION_HEIGHT)
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(8, 3, 12, 3)
-        layout.setSpacing(8)
+        layout.setContentsMargins(hig.GROUP_GAP, 0, hig.ITEM_GAP, 0)
+        layout.setSpacing(hig.ITEM_GAP)
+
+        project_side = QHBoxLayout()
+        project_side.setSpacing(hig.CONTROL_GAP)
+        layout.addLayout(project_side, stretch=1)
 
         self.ensemble_capacity_badge = EnsembleCapacityBadge(parent=bar)
-        self.ensemble_capacity_badge.clicked.connect(self._quick_load_owner_id)
-        layout.addWidget(self.ensemble_capacity_badge)
+        self.ensemble_capacity_badge.clicked.connect(self._show_about)
+        project_side.addWidget(self.ensemble_capacity_badge)
 
         command_group = QFrame()
-        command_group.setObjectName("CommandGroup")
+        command_group.setObjectName("ToolbarNavigation")
+        command_group.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         command_layout = QHBoxLayout(command_group)
         command_layout.setContentsMargins(0, 0, 0, 0)
-        command_layout.setSpacing(8)
+        command_layout.setSpacing(hig.CONTROL_GAP)
 
-        navigation_group = QFrame()
-        navigation_group.setObjectName("ToolbarCommandCluster")
-        navigation_layout = QHBoxLayout(navigation_group)
-        navigation_layout.setContentsMargins(0, 0, 0, 0)
-        navigation_layout.setSpacing(4)
-
-        self.toolbar_home_btn = PillButton(tr("主页"), "secondary", FluentSymbol.HOME)
+        self.toolbar_home_btn = PillButton(tr("主页"), "ghost")
+        set_fluent_symbol(
+            self.toolbar_home_btn, FluentSymbol.HOME, checked_symbol=FluentSymbol.HOME_ACTIVE,
+        )
+        self.toolbar_home_btn.setFixedHeight(hig.CAPTION_BUTTON_HEIGHT)
+        self.toolbar_home_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.toolbar_home_btn.setAccessibleName(tr("主页"))
+        self.toolbar_home_btn.setToolTip(tr("主页"))
+        self.toolbar_home_btn.setCheckable(True)
         self.toolbar_home_btn.clicked.connect(self._show_home)
-        navigation_layout.addWidget(self.toolbar_home_btn)
-        command_layout.addWidget(navigation_group)
-
-        self.project_toolbar_group = QFrame()
-        self.project_toolbar_group.setObjectName("ToolbarCommandCluster")
-        project_command_layout = QHBoxLayout(self.project_toolbar_group)
-        project_command_layout.setContentsMargins(0, 0, 0, 0)
-        project_command_layout.setSpacing(4)
+        command_layout.addWidget(self.toolbar_home_btn)
 
         self.toolbar_project_btn = PillButton(
-            tr("项目"), "primary", FluentSymbol.PROJECT
+            tr("项目"), "ghost", FluentSymbol.PROJECT
         )
+        self.toolbar_project_btn.setObjectName("ToolbarProject")
+        self.toolbar_project_btn.setFixedHeight(hig.CAPTION_BUTTON_HEIGHT)
+        self.toolbar_project_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.toolbar_project_btn.setAccessibleName(tr("项目"))
+        self.toolbar_project_btn.setToolTip(tr("项目"))
         self.project_file_menu = QMenu(self.toolbar_project_btn)
         new_action = self.project_file_menu.addAction(tr("新建项目"))
         new_action.triggered.connect(self._new_project)
-        open_action = self.project_file_menu.addAction(tr("打开工程"))
+        open_action = self.project_file_menu.addAction(tr("打开工程或曲谱"))
         open_action.triggered.connect(self._open_project)
         self.project_file_menu.addSeparator()
         import_action = self.project_file_menu.addAction(tr("导入 MIDI"))
@@ -1263,63 +1299,81 @@ class MidiToBdoWindow(
         self.project_file_menu.addSeparator()
         self._install_midi_export_action(self.project_file_menu)
         self.toolbar_project_btn.setMenu(self.project_file_menu)
-        project_command_layout.addWidget(self.toolbar_project_btn)
-        command_layout.addWidget(self.project_toolbar_group)
-
-        self.score_toolbar_group = QFrame()
-        self.score_toolbar_group.setObjectName("ToolbarCommandCluster")
-        score_command_layout = QHBoxLayout(self.score_toolbar_group)
-        score_command_layout.setContentsMargins(0, 0, 0, 0)
-        score_command_layout.setSpacing(4)
-
-        self.toolbar_optimize_btn = PillButton(tr("MIDI 优化"), "secondary", FluentSymbol.OPTIMIZE)
-        self.toolbar_optimize_btn.clicked.connect(lambda: self._open_midi_optimizer(None))
-        score_command_layout.addWidget(self.toolbar_optimize_btn)
-
-        self.toolbar_creation_btn = PillButton(tr("创作助手"), "secondary", FluentSymbol.ADD_TRACK)
-        self.toolbar_creation_btn.clicked.connect(self._open_creation_assistant)
-        score_command_layout.addWidget(self.toolbar_creation_btn)
-
-        self.toolbar_multiplayer_sync_btn = PillButton(tr("多人同步器"), "secondary", FluentSymbol.NETWORK)
-        self.toolbar_multiplayer_sync_btn.clicked.connect(self._open_multiplayer_synchronizer)
-        self.toolbar_multiplayer_sync_btn.setEnabled(False)
-        self.toolbar_multiplayer_sync_btn.setToolTip(
-            tr("多人同步器暂未开放；网络房间功能仍在开发中")
+        command_layout.addWidget(self.toolbar_project_btn)
+        website_label = tr("音乐库")
+        self.toolbar_website_btn = PillButton(website_label, "ghost")
+        set_fluent_symbol(
+            self.toolbar_website_btn, FluentSymbol.GLOBE, checked_symbol=FluentSymbol.GLOBE_ACTIVE,
         )
-        # Dormant collaboration belongs in the Project menu when it ships; a
-        # disabled top-level command weakens the primary authoring hierarchy.
-        self.toolbar_multiplayer_sync_btn.hide()
-        score_command_layout.addWidget(self.toolbar_multiplayer_sync_btn)
+        self.toolbar_website_btn.setObjectName("ToolbarWebsite")
+        self.toolbar_website_btn.setFixedHeight(hig.CAPTION_BUTTON_HEIGHT)
+        self.toolbar_website_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.toolbar_website_btn.setAccessibleName(website_label)
+        self.toolbar_website_btn.setToolTip(tr("在线曲谱库"))
+        self.toolbar_website_btn.setCheckable(True)
+        self.toolbar_website_btn.clicked.connect(self._toggle_online_score_library)
+        command_layout.addWidget(self.toolbar_website_btn)
 
-        self.toolbar_master_effects_btn = PillButton(
-            tr("全局效果"), "secondary", FluentSymbol.CURVE
-        )
-        self.toolbar_master_effects_btn.clicked.connect(self._open_master_effects)
-        score_command_layout.addWidget(self.toolbar_master_effects_btn)
-        command_layout.addWidget(self.score_toolbar_group)
-        layout.addWidget(command_group)
+        project_side.addWidget(command_group)
 
+        self.document_title_group = QFrame()
+        self.document_title_group.setObjectName("DocumentTitleGroup")
+        self.document_title_group.setMinimumWidth(96)
+        self.document_title_group.setMaximumWidth(320)
+        title_layout = QVBoxLayout(self.document_title_group)
+        title_layout.setContentsMargins(hig.GROUP_GAP, 0, 0, 0)
+        title_layout.setSpacing(0)
         self.file_label = ElidedLabel(
-            tr("未导入 MIDI"), maximum_hint_width=180
+            tr("未导入 MIDI"), maximum_hint_width=320
         )
         self.file_label.setObjectName("ToolbarText")
-        layout.addWidget(self.file_label)
 
-        self.output_name = QLineEdit()
+        self.output_name = ScoreTitleEdit()
+        self.output_name.setObjectName("DocumentTitle")
         self.output_name.setPlaceholderText(tr("曲谱名"))
-        self.output_name.setFixedWidth(170)
+        self.output_name.setAccessibleName(tr("曲谱名"))
         self.output_name.editingFinished.connect(lambda: self._autosave_project("output name"))
-        layout.addWidget(self.output_name)
-
-        self.preview_source_badge = PillButton(
-            tr("自动音源 · 检测中"), "ghost"
+        title_layout.addWidget(self.output_name)
+        title_layout.addWidget(self.file_label)
+        project_side.addWidget(
+            self.document_title_group, stretch=1, alignment=Qt.AlignVCenter,
         )
-        self.preview_source_badge.setObjectName("ToolbarBadge")
-        self.preview_source_badge.setMaximumWidth(230)
-        self.preview_source_badge.setToolTip(
+        # A capped title leaves the remaining width available as a drag surface.
+        project_side.addStretch()
+
+        self.toolbar_playback_group = QFrame()
+        self.toolbar_playback_group.setObjectName("ToolbarPlaybackGroup")
+        playback_layout = QHBoxLayout(self.toolbar_playback_group)
+        playback_layout.setContentsMargins(0, 0, 0, 0)
+        playback_layout.setSpacing(hig.ITEM_GAP)
+        self.transport_group = self._build_preview_transport()
+        playback_layout.addWidget(self.transport_group)
+        playback_layout.addWidget(self._build_global_bpm_control())
+        layout.addWidget(self.toolbar_playback_group, alignment=Qt.AlignVCenter)
+
+        action_side = QHBoxLayout()
+        action_side.setSpacing(hig.ITEM_GAP)
+        action_side.addStretch(1)
+        layout.addLayout(action_side, stretch=1)
+        actions = QHBoxLayout()
+        actions.setSpacing(hig.ITEM_GAP)
+        action_side.addLayout(actions)
+
+        utilities = PillButton("", "ghost", FluentSymbol.MORE)
+        self.toolbar_more_button = utilities
+        utilities.setObjectName("ToolbarMore")
+        utilities.setFixedSize(hig.BUTTON_HEIGHT, hig.CAPTION_BUTTON_HEIGHT)
+        utilities.setAccessibleName(tr("更多"))
+        utilities.setToolTip(tr("更多"))
+        utility_menu = QMenu(utilities)
+        utility_menu.addAction(tr("设置"), lambda: self._open_settings())
+        self.preview_source_menu = QMenu(tr("试听音源"), utility_menu)
+        self.preview_source_action = utility_menu.addMenu(self.preview_source_menu)
+        self._preview_pack_diagnostic = None
+        utility_menu.aboutToShow.connect(self._refresh_preview_source_status)
+        self.preview_source_action.setToolTip(
             tr("点击切换试听音源；不会改变导出结果")
         )
-        self.preview_source_menu = QMenu(self.preview_source_badge)
         self.preview_source_action_group = QActionGroup(
             self.preview_source_menu
         )
@@ -1341,34 +1395,27 @@ class MidiToBdoWindow(
         self.preview_source_menu.addAction(
             tr("选择音源包…"), lambda: self._open_settings(2, "pack")
         )
-        self.preview_source_badge.setMenu(self.preview_source_menu)
         self._sync_preview_source_menu()
-        layout.addWidget(self.preview_source_badge)
-        layout.addStretch(1)
+        utility_menu.addAction(tr("运行状态"), self._show_runtime_status)
+        utilities.setMenu(utility_menu)
 
-        separator = QFrame()
-        separator.setObjectName("ToolbarSeparator")
-        separator.setFrameShape(QFrame.VLine)
-        layout.addWidget(separator)
-
-        utility_group = QFrame()
-        utility_group.setObjectName("CommandGroup")
-        utility_layout = QHBoxLayout(utility_group)
-        utility_layout.setContentsMargins(0, 0, 0, 0)
-        utility_layout.setSpacing(4)
-
-        self.toolbar_thanks_btn = PillButton(tr("致谢"), "secondary", FluentSymbol.INFO)
-        self.toolbar_thanks_btn.clicked.connect(self._show_acknowledgements)
-        utility_layout.addWidget(self.toolbar_thanks_btn)
-
-        self.toolbar_settings_btn = PillButton(tr("设置"), "secondary", FluentSymbol.SETTINGS)
-        self.toolbar_settings_btn.clicked.connect(self._open_settings)
-        utility_layout.addWidget(self.toolbar_settings_btn)
-        layout.addWidget(utility_group)
-
-        self.convert_button = PillButton(tr("转换"), "convert", FluentSymbol.EXPORT)
+        self.convert_button = PillButton(tr("导出 BDO"), "accent-outline", FluentSymbol.EXPORT)
+        self.convert_button.setObjectName("ToolbarExport")
+        self.convert_button.setFixedHeight(hig.CAPTION_BUTTON_HEIGHT)
+        self.convert_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.convert_button.clicked.connect(self._convert)
-        layout.addWidget(self.convert_button)
+        actions.addWidget(self.convert_button)
+        self.feedback_status = FeedbackStatusTracker(self)
+        self.toolbar_feedback_btn = FeedbackToolbarButton()
+        self.toolbar_feedback_btn.clicked.connect(self._show_feedback)
+        self.feedback_status.unread_changed.connect(self.toolbar_feedback_btn.set_unread_count)
+        self.toolbar_feedback_btn.set_unread_count(self.feedback_status.unread_count)
+        actions.addWidget(self.toolbar_feedback_btn)
+        actions.addWidget(utilities)
+        self.window_chrome = WindowChrome(self, bar, workspace)
+        if self.window_chrome.controls is not None:
+            action_side.addWidget(self.window_chrome.controls, alignment=Qt.AlignVCenter)
+        enable_caption_focus_icons(bar)
         return bar
 
     def _build_home_page(self) -> QWidget:
@@ -1387,80 +1434,75 @@ class MidiToBdoWindow(
         outer = QHBoxLayout(page)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        self.home_outer_layout = outer
-
-        shell = HomeBackdrop(HOME_BACKGROUND_IMAGE)
-        self.home_backdrop = shell
-        shell_layout = QHBoxLayout(shell)
-        shell_layout.setContentsMargins(0, 0, 0, 0)
-        shell_layout.setSpacing(0)
-        self.home_shell_layout = shell_layout
-        outer.addWidget(shell, stretch=1)
-
         overlay = QFrame()
         overlay.setObjectName("HomeOverlay")
-        overlay.setFixedWidth(584)
+        overlay.setFixedWidth(600)
         overlay.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.home_sidebar = overlay
         overlay_layout = QVBoxLayout(overlay)
-        overlay_layout.setContentsMargins(32, 20, 22, 16)
+        overlay_layout.setContentsMargins(
+            hig.PAGE_PADDING + hig.ITEM_GAP, 2 * hig.SECTION_GAP,
+            hig.PAGE_PADDING - hig.CONTROL_GAP, hig.SECTION_GAP,
+        )
         overlay_layout.setSpacing(0)
 
         self.home_hero = HomeHero()
         overlay_layout.addWidget(self.home_hero)
-        overlay_layout.addSpacing(14)
+        overlay_layout.addSpacing(hig.SECTION_GAP)
 
         command_deck = QFrame()
         command_deck.setObjectName("HomeCommandDeck")
         quick_actions = QHBoxLayout(command_deck)
-        quick_actions.setContentsMargins(14, 0, 14, 0)
-        quick_actions.setSpacing(8)
+        quick_actions.setContentsMargins(0, 0, 0, 0)
+        quick_actions.setSpacing(hig.ITEM_GAP)
         self.home_new_btn = PillButton(
             tr("新建项目"),
-            "primary",
-            FluentSymbol.PROJECT,
-        )
-        self.home_import_btn = PillButton(
-            tr("导入 MIDI"),
-            "secondary",
-            FluentSymbol.OPEN,
+            "convert",
+            FluentSymbol.NEW_PROJECT,
         )
         self.home_open_btn = PillButton(
-            tr("打开工程"),
-            "secondary",
-            FluentSymbol.PROJECT,
+            tr("打开"),
+            "ghost",
+            FluentSymbol.OPEN,
+        )
+        self.home_open_btn.setAccessibleName(tr("打开工程或曲谱"))
+        self.home_quick_convert_btn = PillButton(
+            tr("MIDI 转 BDO"),
+            "ghost",
+            FluentSymbol.IMPORT,
         )
         action_descriptions = (
             (self.home_new_btn, "新建空白项目\n从一条空白轨道开始"),
-            (self.home_import_btn, "导入 MIDI\n继续编排已有音乐"),
-            (self.home_open_btn, "打开工程\n浏览本地项目文件"),
+            (self.home_quick_convert_btn, "导入 MIDI 后选择导出或继续编辑"),
+            (self.home_open_btn, "打开工程或曲谱\n支持 JSON、BDO 和 BDOM"),
         )
         for action_button, description in action_descriptions:
-            action_button.setObjectName("HomeQuickAction")
-            action_button.setProperty("homeAction", True)
-            action_button.setFixedHeight(44)
             action_button.setToolTip(tr(description).replace("\n", " · "))
             action_button.setAccessibleDescription(tr(description))
-        self.home_new_btn.setProperty("actionTone", "accent")
-        quick_actions.addWidget(self.home_new_btn, stretch=6)
-        quick_actions.addWidget(self.home_import_btn, stretch=5)
-        quick_actions.addWidget(self.home_open_btn, stretch=5)
+        for action in (self.home_new_btn, self.home_open_btn, self.home_quick_convert_btn):
+            action.setObjectName("HomeQuickAction")
+            action.setFixedHeight(hig.PAGE_ACTION_HEIGHT)
+            quick_actions.addWidget(action, 1)
         self.home_new_btn.clicked.connect(self._new_project)
-        self.home_import_btn.clicked.connect(self._browse_midi)
+        self.home_quick_convert_btn.clicked.connect(self._quick_convert_midi)
         self.home_open_btn.clicked.connect(self._open_project)
         overlay_layout.addWidget(command_deck)
-        overlay_layout.addSpacing(14)
+        overlay_layout.addSpacing(hig.SECTION_GAP)
 
         library_surface = HomeLibrarySurface()
         self.home_library_surface = library_surface
         library_surface_layout = library_surface.content_layout
         library_bar = QFrame()
         library_bar.setObjectName("HomeLibraryBar")
-        library_layout = QHBoxLayout(library_bar)
-        library_layout.setContentsMargins(0, 0, 0, 0)
-        library_layout.setSpacing(8)
+        library_layout = QVBoxLayout(library_bar)
+        library_layout.setContentsMargins(0, 0, 0, hig.ITEM_GAP)
+        library_layout.setSpacing(hig.ITEM_GAP)
+        search_row = QHBoxLayout()
+        search_row.setSpacing(hig.ITEM_GAP)
+        library_layout.addLayout(search_row)
 
         library_tabs = HomeLibraryTabs()
+        self.home_library_motion = NavigationCue(library_tabs)
         library_tabs_layout = library_tabs.content_layout
         self.home_nav_group = QButtonGroup(self)
         self.home_nav_group.setExclusive(True)
@@ -1476,50 +1518,59 @@ class MidiToBdoWindow(
         self.home_game_nav.setAccessibleDescription(
             tr("Black Desert Music 目录中的曲谱")
         )
-        for nav_button in (self.home_project_nav, self.home_game_nav):
+        self.home_downloads_nav = QPushButton(tr("下载"))
+        self.home_downloads_nav.setObjectName("HomeNavButton")
+        self.home_downloads_nav.setCheckable(True)
+        for nav_button in (self.home_project_nav, self.home_game_nav, self.home_downloads_nav):
+            nav_button.setProperty("kind", "ghost")
             nav_button.setCursor(Qt.PointingHandCursor)
-            nav_button.setFixedHeight(36)
+            nav_button.setFixedHeight(hig.SEGMENT_HEIGHT)
             self.home_nav_group.addButton(nav_button)
             library_tabs_layout.addWidget(nav_button)
+        library_tabs_layout.addStretch(1)
         self.home_project_nav.setChecked(True)
         library_layout.addWidget(library_tabs)
 
         self.home_search = QLineEdit()
         self.home_search.setObjectName("HomeSearch")
-        self.home_search.setFixedHeight(36)
+        self.home_search.setFixedHeight(hig.BUTTON_HEIGHT)
         self.home_search.setPlaceholderText(tr("搜索项目或曲谱"))
+        self.home_search.setAccessibleName(tr("搜索项目或曲谱"))
         self.home_search.setClearButtonEnabled(True)
         self.home_search.textChanged.connect(self._apply_home_filter)
-        library_layout.addWidget(self.home_search, stretch=1)
-        self.home_refresh_btn = PillButton(tr("刷新"), "ghost")
+        search_row.addWidget(self.home_search, stretch=1)
+        self.home_refresh_btn = PillButton("", "ghost", FluentSymbol.REFRESH)
         self.home_refresh_btn.setObjectName("HomeRefreshButton")
-        self.home_refresh_btn.setProperty("homeAction", True)
-        self.home_refresh_btn.setFixedSize(58, 36)
+        self.home_refresh_btn.setFixedSize(hig.BUTTON_HEIGHT, hig.BUTTON_HEIGHT)
+        self.home_refresh_btn.setToolTip(tr("刷新"))
+        self.home_refresh_btn.setAccessibleName(tr("刷新"))
         self.home_refresh_btn.clicked.connect(self._refresh_home)
-        library_layout.addWidget(self.home_refresh_btn)
+        search_row.addWidget(self.home_refresh_btn)
         library_surface_layout.addWidget(library_bar)
 
         self.home_library_stack = QStackedWidget()
         self.home_library_stack.setObjectName("HomeLibraryStack")
-        project_card, self.project_list, project_footer, self.project_count = self._build_home_card(
-            "项目",
-            "打开所选项目",
-            "primary",
-        )
+        (
+            project_card, self.project_list, project_footer, self.project_count,
+            self.project_empty_label,
+        ) = self._build_home_card("项目", "打开所选项目", "暂无项目")
         project_card.setProperty("homeKind", "project")
         self.project_open_button = project_footer
         project_footer.clicked.connect(
             lambda: self._open_selected_home_item(self.project_list)
         )
-        game_card, self.game_score_list, game_footer, self.game_score_count = self._build_home_card(
-            "游戏曲谱",
-            "打开游戏目录",
-            "primary",
-        )
+        (
+            game_card, self.game_score_list, game_footer, self.game_score_count,
+            self.game_score_empty_label,
+        ) = self._build_home_card("游戏曲谱", "打开游戏目录", "未找到游戏曲谱")
         game_card.setProperty("homeKind", "game")
         game_footer.clicked.connect(self._open_game_music_directory)
         self.home_library_stack.addWidget(project_card)
         self.home_library_stack.addWidget(game_card)
+        self.home_downloads_page = HomeDownloadsPage(self.score_library_downloads)
+        self.home_downloads_page.content_size_changed.connect(self._fit_home_library_page)
+        self.home_downloads_page.score_open_requested.connect(self._open_bdo_score_path)
+        self.home_library_stack.addWidget(self.home_downloads_page)
         library_surface_layout.addWidget(self.home_library_stack, stretch=1)
 
         self.home_footer = HomeFooter(APP_DISPLAY_VERSION)
@@ -1527,17 +1578,22 @@ class MidiToBdoWindow(
             self.home_footer.release_notes_requested.connect(
                 self._show_release_notes
             )
-        library_surface_layout.addWidget(self.home_footer)
-        overlay_layout.addWidget(library_surface, stretch=1)
+        overlay_layout.addWidget(library_surface)
+        overlay_layout.addStretch(1)
+        overlay_layout.addWidget(self.home_footer)
 
-        shell_layout.addWidget(overlay)
-        shell_layout.addStretch(1)
+        self.home_backdrop = HomeBackdrop(HOME_BACKGROUND_IMAGE)
+        outer.addWidget(overlay)
+        outer.addWidget(self.home_backdrop, stretch=1)
 
         self.home_project_nav.clicked.connect(
             lambda: self._show_home_library("project")
         )
         self.home_game_nav.clicked.connect(
             lambda: self._show_home_library("game")
+        )
+        self.home_downloads_nav.clicked.connect(
+            lambda: self._show_home_library("downloads")
         )
         self.project_list.currentItemChanged.connect(
             lambda *_args: self._home_selection_changed()
@@ -1558,13 +1614,21 @@ class MidiToBdoWindow(
     def _show_home_library(self, library: str) -> None:
         if not hasattr(self, "home_library_stack"):
             return
-        show_game = library == "game"
-        self.home_library_stack.setCurrentIndex(1 if show_game else 0)
-        self.home_project_nav.setChecked(not show_game)
-        self.home_game_nav.setChecked(show_game)
-        active_list = self.game_score_list if show_game else self.project_list
-        active_list.setFocus(Qt.OtherFocusReason)
+        page_index = {"game": 1, "downloads": 2}.get(library, 0)
+        previous_index = self.home_library_stack.currentIndex()
+        self.home_library_stack.setCurrentIndex(page_index)
+        self._fit_home_library_page()
+        self.home_project_nav.setChecked(page_index == 0)
+        self.home_game_nav.setChecked(page_index == 1)
+        self.home_downloads_nav.setChecked(page_index == 2)
+        search_hint = tr("搜索下载" if page_index == 2 else "搜索项目或曲谱")
+        self.home_search.setPlaceholderText(search_hint)
+        self.home_search.setAccessibleName(search_hint)
+        self.home_refresh_btn.setVisible(page_index != 2)
         self._update_toolbar_ensemble_badge()
+        if 0 <= previous_index != page_index:
+            tabs = (self.home_project_nav, self.home_game_nav, self.home_downloads_nav)
+            self.home_library_motion.play_below(tabs[previous_index], tabs[page_index])
 
     def _home_selection_changed(self) -> None:
         self._update_home_action_states()
@@ -1574,53 +1638,63 @@ class MidiToBdoWindow(
         if not hasattr(self, "project_open_button"):
             return
         item = self.project_list.currentItem()
-        self.project_open_button.setEnabled(
+        can_open = (
             item is not None
             and not item.isHidden()
             and isinstance(item.data(Qt.UserRole), dict)
+        )
+        self.project_open_button.setEnabled(can_open)
+        self.project_open_button.setVisible(can_open)
+        self.project_open_button.parentWidget().setVisible(
+            can_open or not self.project_count.isHidden()
         )
 
     def _build_home_card(
         self,
         title: str,
         action: str,
-        density: str,
-    ) -> tuple[QWidget, QListWidget, QPushButton, QLabel]:
+        empty_message: str,
+    ) -> tuple[QWidget, QListWidget, QPushButton, QLabel, QLabel]:
         card = QFrame()
         card.setObjectName("HomeCard")
-        card.setProperty("density", density)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(hig.ITEM_GAP)
         card_header_frame = QFrame()
         card_header_frame.setObjectName("HomeCardHeader")
         card_header = QHBoxLayout(card_header_frame)
-        card_header.setContentsMargins(2, 0, 0, 0)
-        card_header.setSpacing(8)
-        title_label = QLabel(tr(title))
-        title_label.setObjectName("HomeCardTitle")
+        card_header.setContentsMargins(0, 0, 0, 0)
+        card_header.setSpacing(hig.ITEM_GAP)
         count_label = QLabel("0")
         count_label.setObjectName("HomeCount")
-        count_label.setAlignment(Qt.AlignCenter)
+        count_label.setAccessibleName(tr(title))
+        count_label.hide()
         action_button = PillButton(tr(action), "ghost")
-        action_button.setProperty("homeAction", True)
-        card_header.addWidget(title_label)
+        action_button.setObjectName("HomeLibraryAction")
+        action_button.setFixedHeight(hig.BUTTON_HEIGHT)
         card_header.addWidget(count_label)
         card_header.addStretch(1)
         card_header.addWidget(action_button)
-        item_list = QListWidget()
+        item_list = HomeListWidget()
         item_list.setObjectName("HomeList")
         item_list.setProperty("i18nSkipItems", True)
         item_list.setSpacing(0)
+        item_list.hide()
         item_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         item_list.setTextElideMode(Qt.ElideRight)
         item_list.setAccessibleName(tr(title))
         item_list.setItemDelegate(
             HomeEntryDelegate(self.home_instrument_art, item_list)
         )
+        empty_label = QLabel(tr(empty_message))
+        empty_label.setObjectName("HomeEmptyState")
+        empty_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        empty_label.setWordWrap(True)
+        empty_label.setMinimumHeight(64)
+        layout.addWidget(empty_label)
+        layout.addWidget(item_list)
         layout.addWidget(card_header_frame)
-        layout.addWidget(item_list, stretch=1)
-        return card, item_list, action_button, count_label
+        return card, item_list, action_button, count_label, empty_label
 
     @staticmethod
     def _add_home_entry(target: QListWidget, entry: HomeEntry) -> None:
@@ -1663,7 +1737,6 @@ class MidiToBdoWindow(
     def _refresh_home(self) -> None:
         if not hasattr(self, "game_score_list"):
             return
-        self._refresh_home_identity()
         previous = self.home_scan_session
         if previous is not None:
             previous.cancel()
@@ -1702,14 +1775,8 @@ class MidiToBdoWindow(
             game_limit=80,
             project_limit=400,
         )
-        self.game_score_count.setText("0")
-        self.project_count.setText(str(self.project_list.count()))
+        self._apply_home_filter()
         self._scan_home_batch(generation)
-
-    def _refresh_home_identity(self) -> None:
-        if not hasattr(self, "ensemble_capacity_badge"):
-            return
-        self.ensemble_capacity_badge.set_owner_id(self.owner_id)
 
     def _quick_load_owner_id(self) -> None:
         identity = prompt_for_owner_identity(
@@ -1722,7 +1789,6 @@ class MidiToBdoWindow(
             self.char_name = character_name
         set_owner_identity(self.config, self.owner_id, self.char_name)
         save_config(self.config)
-        self._refresh_home_identity()
         self._autosave_project("owner id")
         self.show_toast(
             trf("已读取 Owner ID：0x{owner_id:08x}", owner_id=self.owner_id),
@@ -1734,7 +1800,7 @@ class MidiToBdoWindow(
         if generation != self.home_scan_generation or session is None:
             return
         if not session.step(64):
-            QTimer.singleShot(0, lambda: self._scan_home_batch(generation))
+            QTimer.singleShot(0, self, lambda: self._scan_home_batch(generation))
             return
         game_entries, project_entries = session.results()
         self.home_scan_session = None
@@ -1743,10 +1809,14 @@ class MidiToBdoWindow(
         project_entries.extend(self._home_recent_entries)
         for entry in merge_home_project_entries(project_entries):
             self._add_home_entry(self.project_list, entry)
-        if self.game_score_list.count() == 0:
-            self.game_score_list.addItem(tr("未找到游戏曲谱"))
-        if self.project_list.count() == 0:
-            self.project_list.addItem(tr("暂无项目"))
+        for target, message in (
+            (self.game_score_list, "未找到游戏曲谱"),
+            (self.project_list, "暂无项目"),
+        ):
+            if target.count() == 0:
+                item = QListWidgetItem(tr(message))
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                target.addItem(item)
         self._apply_home_filter()
         self._update_home_action_states()
 
@@ -1754,105 +1824,188 @@ class MidiToBdoWindow(
         if not hasattr(self, "home_search"):
             return
         query = " ".join(self.home_search.text().casefold().split())
-        for target, count_label in (
-            (self.game_score_list, self.game_score_count),
-            (self.project_list, self.project_count),
+        self.home_downloads_page.set_query(query)
+        for target, count_label, empty_label, empty_message in (
+            (self.game_score_list, self.game_score_count,
+             self.game_score_empty_label, "未找到游戏曲谱"),
+            (self.project_list, self.project_count,
+             self.project_empty_label, "暂无项目"),
         ):
             visible_count = 0
+            preview_rows: list[int] = []
             for index in range(target.count()):
                 item = target.item(index)
                 data = item.data(Qt.UserRole)
                 if not isinstance(data, dict):
-                    item.setHidden(bool(query))
+                    item.setHidden(True)
                     continue
                 searchable = f"{data.get('label', '')} {item.text()}".casefold()
                 visible = not query or query in searchable
                 item.setHidden(not visible)
                 visible_count += int(visible)
-            count_label.setText(str(visible_count))
+                if visible and len(preview_rows) < 5:
+                    preview_rows.append(index)
+            count_label.setText(trf("共 {count} 项", count=visible_count))
+            count_label.setVisible(bool(preview_rows))
+            target.setVisible(bool(preview_rows))
+            empty_label.setVisible(not preview_rows)
+            if not preview_rows:
+                empty_label.setText(tr("没有匹配的结果" if query else empty_message))
+                target.setCurrentRow(-1)
+                continue
+            row_height = sum(target.sizeHintForRow(row) for row in preview_rows)
+            target.set_preview_height(min(320, row_height))
+            selected = target.currentItem()
+            if selected is None or selected.isHidden():
+                target.setCurrentRow(preview_rows[0])
         self._update_home_action_states()
+        self._fit_home_library_page()
+
+    def _fit_home_library_page(self) -> None:
+        page = self.home_library_stack.currentWidget()
+        self.home_library_stack.setMaximumHeight(page.sizeHint().height())
 
     def _show_home(self) -> None:
         self._stop_preview(reset_playhead=False)
         self._refresh_home()
         self._switch_main_page(self.home_page, home=True)
-        self.show_toast(
-            tr("双击曲谱或项目即可打开；主页扫描不会读取曲谱中的身份信息。")
-        )
 
     def _show_workspace(self) -> None:
         self._switch_main_page(self.workspace_page, home=False)
 
-    def _switch_main_page(self, page: QWidget, *, home: bool) -> None:
-        """Commit synchronously, then crossfade the visual page snapshot."""
+    def _toggle_online_score_library(self) -> None:
+        previous = self.page_stack.currentWidget()
+        if previous is self.online_score_library_page:
+            target = self._library_return_page or self.home_page
+            self._switch_main_page(target, home=target is self.home_page)
+            return
+        if self.online_score_library_page is None:
+            self.toolbar_website_btn.setChecked(False)
+            choice = choose_prompt(
+                self, tr("音乐库"),
+                tr("您即将进入由 CN服务器 温尘梦 玩家收集数据制作搭建的公益网站"),
+                (("cancel", tr("取消")), ("enter", tr("进入音乐库"))),
+                default="enter",
+                cancel="cancel",
+            )
+            if choice != "enter":
+                return
+            from bdo_music_composer.ui.online_score_library_qt import OnlineScoreLibraryPage
 
-        page_changed = self.page_stack.currentWidget() is not page
-        snapshot = self.main_page_transition.capture_current_page() if page_changed else None
-        self.setUpdatesEnabled(False)
-        try:
-            self._set_home_toolbar_mode(home)
-            self.page_stack.setCurrentWidget(page)
-        finally:
-            self.setUpdatesEnabled(True)
+            self.online_score_library_page = OnlineScoreLibraryPage(self.page_stack)
+            self.online_score_library_page.download_requested.connect(
+                self.score_library_downloads.start
+            )
+            self.page_stack.addWidget(self.online_score_library_page)
+        self._library_return_page = previous
+        if previous is self.workspace_page:
+            self._stop_preview(reset_playhead=False)
+        self._switch_main_page(self.online_score_library_page, home=False)
+
+    def _notify_score_library_download(self, entry: ScoreLibraryDownload) -> None:
+        if entry.state == "completed":
+            message = trf("下载完成 · {name}", name=entry.name)
+            kind, duration = "success", 4200
+        else:
+            message = trf("下载失败 · {name}", name=entry.name)
+            if entry.error:
+                message = f"{message}\n{entry.error}"
+            kind, duration = "error", 7000
+
+        page = self.online_score_library_page
+        if page is not None and self.page_stack.currentWidget() is page:
+            page.show_download_notice(message, kind=kind, duration_ms=duration)
+        else:
+            self.show_toast(message, kind=kind, duration_ms=duration)
+
+    def _set_library_project_shortcuts(self, browsing: bool) -> None:
+        if browsing and self._library_shortcut_states is None:
+            self._library_shortcut_states = tuple(
+                shortcut.isEnabled() for shortcut in self._project_window_shortcuts
+            )
+            for shortcut in self._project_window_shortcuts:
+                shortcut.setEnabled(False)
+        elif not browsing and self._library_shortcut_states is not None:
+            for shortcut, enabled in zip(
+                self._project_window_shortcuts, self._library_shortcut_states,
+            ):
+                shortcut.setEnabled(enabled)
+            self._library_shortcut_states = None
+
+    def _switch_main_page(self, page: QWidget, *, home: bool) -> None:
+        """Commit page and keyboard focus together; ease the navigation marker."""
+
+        previous = self.page_stack.currentWidget()
+        browsing = page is self.online_score_library_page
+        leaving_library = previous is self.online_score_library_page
+        anchors = {
+            self.home_page: self.toolbar_home_btn,
+            self.workspace_page: self.toolbar_project_btn,
+            self.online_score_library_page: self.toolbar_website_btn,
+        }
+        motion_origin = (
+            self.main_page_transition.capture(anchors.get(previous)) if previous is not page else None
+        )
+        if browsing or leaving_library:
+            self._set_library_project_shortcuts(browsing)
+        self._set_home_toolbar_mode(home, browsing=browsing)
+        self.main_page_transition.commit_page(
+            page, self.toolbar_website_btn if browsing else self.toolbar_home_btn,
+            self.timeline if page is self.workspace_page else None,
+            leaving_native_page=leaving_library, entering_native_page=browsing,
+        )
         self._update_ensemble_metric()
-        self.update()
-        if page_changed:
-            self.main_page_transition.fade_from(snapshot, page)
+        if motion_origin is not None:
+            self.main_page_transition.animate(motion_origin, anchors.get(page))
+
+    def _set_reference_audio_relink_required(self, required: bool) -> None:
+        self.reference_audio_relink_required = required
+        self.timeline.set_reference_audio_relink_required(required)
+
+    def _is_reference_audio_relink(self, path: str) -> bool:
+        return bool(self.reference_audio_relink_required and not self.reference_audio_path and path)
+
+    def _replaces_reference_audio_review(self, path: str) -> bool:
+        review_state = self.transcription_session.state
+        return not self.loading_project and not self._is_reference_audio_relink(path) and bool(
+            self.reference_audio_path or review_state.cache_key or self.transcription_result is not None
+        )
+
+    def _confirm_reference_audio_change(self, path: str) -> bool:
+        if not self._replaces_reference_audio_review(path):
+            return True
+        editor = self.active_transcription_editor
+        if editor is not None and editor.has_transcription_staging():
+            self.show_toast(
+                tr("请先应用、撤销或清除本次暂存，再更换音频或重新分析。"),
+                kind="warning",
+            )
+            return False
+        if not self.transcription_session.state.pending_routes:
+            return True
+        from bdo_music_composer.ui.dialogs.composer_prompt import ComposerPrompt
+
+        prompt = ComposerPrompt(
+            editor if editor is not None and editor.isVisible() else self,
+            tr("更换参考音频") if path else tr("移除参考音频"),
+            tr(
+                "当前仍有尚未应用的扒谱路由。更换或卸载音频会丢弃这些"
+                "审阅路由；已应用的正式音符不受影响。是否继续？"
+            ),
+            (("cancel", tr("取消")), ("continue", tr("继续"))),
+            default="cancel",
+        )
+        prompt.exec()
+        confirmed = prompt.choice == "continue"
+        prompt.deleteLater()
+        return confirmed
 
     def _reference_audio_changed(self, path: str) -> None:
         previous_path = self.reference_audio_path
         review_state = self.transcription_session.state
-        relinking_saved_audio = bool(
-            self.reference_audio_relink_required
-            and not previous_path
-            and path
-        )
-        audio_changed = bool(
-            previous_path != path
-            and not self.loading_project
-            and not relinking_saved_audio
-            and (
-                previous_path
-                or review_state.cache_key
-                or self.transcription_result is not None
-            )
-        )
-        editor = self.active_transcription_editor
-        if (
-            audio_changed
-            and editor is not None
-            and editor.has_transcription_staging()
-        ):
-            QMessageBox.warning(
-                editor,
-                tr("存在未提交候选草稿"),
-                tr("请先应用、撤销或清除本次暂存，再更换音频或重新分析。"),
-            )
-            QTimer.singleShot(
-                0,
-                lambda old_path=previous_path:
-                self.reference_audio.set_audio_path(old_path),
-            )
-            return
-        if audio_changed and review_state.pending_routes:
-            answer = QMessageBox.question(
-                self,
-                tr("更换参考音频"),
-                tr(
-                    "当前仍有尚未应用的扒谱路由。更换或卸载音频会丢弃这些"
-                    "审阅路由；已应用的正式音符不受影响。是否继续？"
-                ),
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if answer != QMessageBox.Yes:
-                QTimer.singleShot(
-                    0,
-                    lambda old_path=previous_path:
-                    self.reference_audio.set_audio_path(old_path),
-                )
-                return
-        if audio_changed:
+        relinking_saved_audio = self._is_reference_audio_relink(path)
+        if self._replaces_reference_audio_review(path):
+            editor = self.active_transcription_editor
             # Invalidate queued success/failure callbacks before cancelling.
             # The worker pointer remains until its own finished signal so a
             # second analysis cannot start while the old thread is draining.
@@ -1896,7 +2049,9 @@ class MidiToBdoWindow(
             )
             self._clear_transcription_review_history()
         self.reference_audio_path = path
-        self.reference_audio_relink_required = False
+        if path and path != previous_path and not self.loading_project:
+            self._record_usage_feature("reference_audio")
+        self._set_reference_audio_relink_required(False)
         self._reference_bpm_audio_changed(path)
         self._refresh_transcription_workspace()
         if self.tracks and not self.loading_project:
@@ -1927,10 +2082,9 @@ class MidiToBdoWindow(
                 abs_tol=0.001,
             )
         ):
-            QMessageBox.warning(
-                editor,
-                tr("存在未提交候选草稿"),
+            self.show_toast(
                 tr("请先应用、撤销或清除本次暂存，再修改音频对齐。"),
+                kind="warning",
             )
             self.reference_audio.set_project_offset_ms(
                 self.reference_audio_offset_ms,
@@ -1939,6 +2093,7 @@ class MidiToBdoWindow(
             return
         self._invalidate_transcription_rhythm_diagnostic()
         self.reference_audio_offset_ms = float(offset_ms)
+        self._reposition_reference_after_alignment()
         self._refresh_transcription_workspace()
         if self.transcription_result is not None:
             self._start_transcription_assist_analysis(harmony_only=True)
@@ -1972,118 +2127,99 @@ class MidiToBdoWindow(
             self._autosave_project("reference alignment", immediate=True)
 
     def _reference_playback_state_changed(
-        self, state: QMediaPlayer.PlaybackState,
+        self, _state: QMediaPlayer.PlaybackState,
     ) -> None:
-        if (
-            state != QMediaPlayer.PlaybackState.PlayingState
-            and not self.realtime_preview_active
-        ):
-            self.reference_status_timer.stop()
         self._sync_preview_state()
 
-    def _set_home_toolbar_mode(self, home: bool) -> None:
+    def _set_home_toolbar_mode(self, home: bool, *, browsing: bool = False) -> None:
+        editing = not (home or browsing)
+        self._toolbar_navigation_compact = editing
         for widget in (
-            self.score_toolbar_group,
-            self.toolbar_optimize_btn,
-            self.toolbar_master_effects_btn,
-            self.file_label,
-            self.output_name,
-            self.preview_source_badge,
+            self.document_title_group,
+            self.toolbar_playback_group,
+            self.convert_button,
         ):
-            widget.setVisible(not home)
-        self._sync_convert_button_enabled(home=home)
+            widget.setVisible(editing)
+        self.toolbar_home_btn.setChecked(home)
+        self.toolbar_website_btn.setChecked(browsing)
+        if home:
+            self.toolbar_home_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        elif browsing:
+            self.toolbar_website_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._sync_convert_button_enabled(editing=editing)
         self._apply_responsive_density()
 
-    def _sync_convert_button_enabled(self, *, home: bool | None = None) -> None:
-        if home is None:
-            home = self.page_stack.currentWidget() is self.home_page
-        self.convert_button.setEnabled(not home and self.worker is None)
+    def _sync_convert_button_enabled(self, *, editing: bool | None = None) -> None:
+        if editing is None:
+            editing = self.page_stack.currentWidget() is self.workspace_page
+        self.convert_button.setEnabled(editing and self.worker is None)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if hasattr(self, "toolbar_home_btn"):
             self._apply_responsive_density()
 
+    def nativeEvent(self, event_type, message):
+        chrome = getattr(self, "window_chrome", None)
+        if chrome is not None and event_type == b"windows_generic_MSG":
+            result = chrome.native_event(message)
+            if result is not None:
+                return True, result
+        return super().nativeEvent(event_type, message)
+
     def _apply_home_responsive_density(self) -> None:
         if not hasattr(self, "home_sidebar"):
             return
-        self.home_outer_layout.setContentsMargins(0, 0, 0, 0)
-        self.home_shell_layout.setSpacing(0)
         width = self.width()
-        # Returning users spend most of their time in the library, so supported
-        # laptop widths give the actionable surface priority over the artwork.
-        # Wide displays retain the restrained showcase treatment.
-        sidebar_ratio = 0.55 if width < 1440 else 0.45
-        sidebar_width = max(600, min(760, round(width * sidebar_ratio)))
+        sidebar_width = max(600, min(704, round(width * 0.54)))
+        margins = self.home_sidebar.layout().contentsMargins()
+        action_space = sidebar_width - margins.left() - margins.right() - 2 * hig.ITEM_GAP
+        # Keep the three action columns equal after Qt rounds to whole pixels.
+        sidebar_width -= action_space % 3
         self.home_sidebar.setFixedWidth(sidebar_width)
-
-    @staticmethod
-    def _set_responsive_icon_button(
-        button: QPushButton,
-        source_text: str,
-        compact: bool,
-    ) -> None:
-        label = tr(source_text)
-        button.setAccessibleName(label)
-        button.setToolTip(label)
-        if compact:
-            button.setText("")
-            button.setFixedWidth(40)
-        else:
-            button.setMinimumWidth(0)
-            button.setMaximumWidth(16777215)
-            button.setText(label)
+        self._fit_home_library_page()
 
     def _apply_responsive_density(self) -> None:
         """Keep both command rails usable at the supported narrow width."""
 
         self._apply_home_responsive_density()
-        compact = self.width() < MAIN_VERBOSE_CONTROLS_MIN_WIDTH
-        for button, source in (
-            (self.toolbar_home_btn, "主页"),
-            (self.toolbar_project_btn, "项目"),
-            (self.toolbar_optimize_btn, "MIDI 优化"),
-            (self.toolbar_creation_btn, "创作助手"),
-            (self.toolbar_multiplayer_sync_btn, "多人同步器"),
-            (self.toolbar_master_effects_btn, "全局效果"),
-            (self.toolbar_thanks_btn, "致谢"),
-            (self.toolbar_settings_btn, "设置"),
-        ):
-            self._set_responsive_icon_button(button, source, compact)
-        self.toolbar_multiplayer_sync_btn.setToolTip(
-            tr("多人同步器暂未开放；网络房间功能仍在开发中")
-        )
 
-        self.output_name.setFixedWidth(148 if compact else 170)
-
-        if not hasattr(self, "play_button"):
+        if not hasattr(self, "workbench"):
             return
-        self._timeline_controls_compact = compact
-        for button, source in (
-            (self.pause_button, "暂停"),
-            (self.stop_button, "停止"),
-            (self.timeline_view_buttons.fit_width, "显示全部时间轴"),
-        ):
-            self._set_responsive_icon_button(button, source, compact)
-        self.timeline_loop_box.setAccessibleName(tr("循环区间"))
-        self.timeline_loop_box.setText("" if compact else tr("循环区间"))
-        self.timeline_meta.setVisible(not compact)
-        self.timeline_control_layout.setSpacing(6 if compact else 8)
-        self._set_global_bpm_compact(compact)
-        self.toolbar_global_gain_label.setVisible(not compact)
-        self.toolbar_global_gain.setFixedWidth(132 if compact else 220)
-        self.timeline_zoom_label.setVisible(not compact)
-        self.timeline_pan_label.setVisible(not compact)
-        self.timeline_zoom.setFixedWidth(80 if compact else 104)
-        self.timeline_pan.setFixedWidth(84 if compact else 112)
-        self._sync_preview_state()
+        self.document_title_group.setMinimumWidth(0 if self.width() < 1280 else 96)
+        self._sync_caption_button_widths()
+        self._set_global_bpm_compact(True)
+
+    def _sync_caption_button_widths(self) -> None:
+        navigation = (
+            (self.toolbar_home_btn, tr("主页")),
+            (self.toolbar_project_btn, tr("项目")),
+            (self.toolbar_website_btn, tr("音乐库")),
+        )
+        compact = self._toolbar_navigation_compact
+        for button, label in navigation:
+            text = "" if compact else label
+            if button.text() != text:
+                button.setText(text)
+                if bool(button.property("captionIconOnly")) != compact:
+                    button.setProperty("captionIconOnly", compact)
+                    style = button.style()
+                    style.unpolish(button)
+                    style.polish(button)
+        width = (
+            hig.CAPTION_BUTTON_HEIGHT + hig.ITEM_GAP
+            if compact else max(button.sizeHint().width() for button, _ in navigation)
+        )
+        for button, _ in navigation:
+            button.setFixedWidth(width)
+        export_button = self.convert_button
+        export_button.setFixedWidth(max(108, export_button.sizeHint().width()))
 
     def _new_project(self) -> None:
-        name, accepted = QInputDialog.getText(
+        name, accepted = prompt_text(
             self,
             tr("新建项目"),
             tr("项目名称"),
-            QLineEdit.Normal,
             tr("未命名项目"),
         )
         if accepted and name.strip():
@@ -2142,10 +2278,9 @@ class MidiToBdoWindow(
             self.reference_audio.set_volume_percent(self.ui_preference_binding.reference_volume_percent, notify=False)
             self._set_reference_alignment(0.0, 0.0)
             self.reference_audio_path = ""
-            self.reference_audio_relink_required = False
+            self._set_reference_audio_relink_required(False)
             self.source_format = "project"
             self._reset_project_timeline_metadata()
-            self.bdo_source_snapshot = None
             self.bdo_source_document = None
             self.midi_path = ""
             self.project_id = new_project_id()
@@ -2240,8 +2375,8 @@ class MidiToBdoWindow(
         menu = QMenu(self.project_list)
         menu.addAction(tr("打开工程"), lambda: self._open_home_item(item))
         if str(data.get("kind") or "") == "project":
-            menu.addSeparator()
             menu.addAction(tr("重命名项目"), lambda: self._rename_home_project(item))
+            menu.addSeparator()
             menu.addAction(tr("移到回收站"), lambda: self._trash_home_project(item))
         menu.exec(self.project_list.mapToGlobal(position))
 
@@ -2253,11 +2388,10 @@ class MidiToBdoWindow(
         if not project_path.is_file():
             return
         old_name = str(data.get("label") or project_path.parent.name)
-        new_name, accepted = QInputDialog.getText(
+        new_name, accepted = prompt_text(
             self,
             tr("重命名项目"),
             tr("项目名称"),
-            QLineEdit.Normal,
             old_name,
         )
         new_name = new_name.strip()
@@ -2391,7 +2525,11 @@ class MidiToBdoWindow(
             "project_id": self.project_id if kind == "project" else "",
         })
         self.config["recent_items"] = recent[:12]
-        save_config(self.config)
+        try:
+            save_config(self.config)
+        except OSError:
+            # A recent-item preference is independent of opening the score.
+            append_crash_log("Recent list save failed", traceback.format_exc())
 
     def _build_timeline_panel(self) -> QWidget:
         workspace = QWidget()
@@ -2399,24 +2537,11 @@ class MidiToBdoWindow(
         layout = QVBoxLayout(workspace)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        controls = QFrame()
-        controls.setObjectName("TimelineControlBar")
-        controls.setFixedHeight(42)
-        header = QHBoxLayout(controls)
-        self.timeline_control_layout = header
-        header.setContentsMargins(12, 4, 12, 4)
-        header.setSpacing(8)
         (
             self.timeline_edit_tools,
             self.timeline_marquee_tool, self.timeline_select_tool,
             self.timeline_razor_tool, self.timeline_snap_tool,
-            self.timeline_tool_group,
         ) = build_arrangement_tool_buttons(self)
-        self.timeline_meta = ElidedLabel(
-            tr("等待 MIDI"), maximum_hint_width=170
-        )
-        self.timeline_meta.setObjectName("TimelineMeta")
-        self.timeline_view_buttons = build_timeline_view_buttons(self)
         self.timeline_zoom_label = QLabel(tr("缩放"))
         self.timeline_zoom_label.setObjectName("TimelineControlLabel")
         self.timeline_zoom = QSlider(Qt.Horizontal)
@@ -2435,30 +2560,9 @@ class MidiToBdoWindow(
         self.timeline_pan.setToolTip(tr("时间轴位置"))
         self.timeline_pan.setAccessibleName(tr("时间轴位置"))
         self.timeline_pan_label.setBuddy(self.timeline_pan)
-        transport_group = QFrame()
-        transport_group.setObjectName("TransportGroup")
-        transport_layout = QHBoxLayout(transport_group)
-        transport_layout.setContentsMargins(2, 2, 2, 2)
-        transport_layout.setSpacing(4)
-        self.play_button = PillButton(tr("播放"), "secondary", FluentSymbol.PLAY)
-        self.play_button.clicked.connect(self._play_preview)
-        self.pause_button = PillButton(tr("暂停"), "secondary", FluentSymbol.PAUSE)
-        self.pause_button.clicked.connect(self._pause_preview)
-        self.stop_button = PillButton(tr("停止"), "secondary", FluentSymbol.STOP)
-        self.stop_button.clicked.connect(lambda: self._stop_preview(reset_playhead=True))
-        self.timeline_loop_box = QCheckBox(tr("循环区间"))
-        self.timeline_loop_box.setToolTip(tr("循环播放 A–B 时间区间"))
-        transport_layout.addWidget(self.play_button)
-        transport_layout.addWidget(self.pause_button)
-        transport_layout.addWidget(self.stop_button)
-        transport_layout.addWidget(self.timeline_loop_box)
-        global_bpm_control = self._build_global_bpm_control()
         global_gain_control = self._build_global_velocity_gain_control()
-        selection_velocity_control = (
-            self._build_selection_velocity_percent_control()
-        )
 
-        self.timeline_mix_button, self.timeline_view_button = (
+        self.timeline_mix_menu, self.timeline_view_button = (
             build_timeline_popup_buttons(
                 self,
                 global_gain_control,
@@ -2466,26 +2570,14 @@ class MidiToBdoWindow(
                 self.timeline_zoom,
                 self.timeline_pan_label,
                 self.timeline_pan,
-                *self.timeline_view_buttons,
             )
         )
-        header.addWidget(transport_group)
-        header.addWidget(self.timeline_meta)
-        header.addWidget(global_bpm_control)
-        separator = QFrame()
-        separator.setObjectName("TimelineSeparator")
-        separator.setFrameShape(QFrame.VLine)
-        header.addWidget(separator)
-        header.addWidget(self.timeline_edit_tools)
-        header.addWidget(self.timeline_mix_button)
-        header.addWidget(selection_velocity_control, 1)
-        header.addWidget(self.timeline_view_button)
-        layout.addWidget(controls)
         self.timeline = TimelineCanvas()
         self.timeline.setObjectName("TimelineCanvas")
         self.timeline.set_instrument_art_dir(self.instrument_art_dir)
         self.timeline.fit_width_requested.connect(self._fit_timeline)
         self.timeline.changed.connect(self._on_track_changed)
+        self.timeline.viewport_changed.connect(lambda: sync_timeline_viewport_controls(self))
         self.timeline.track_state_changed.connect(self._on_track_filter_changed)
         self.timeline.game_volume_committed.connect(
             self._on_game_instrument_volume_committed
@@ -2550,6 +2642,7 @@ class MidiToBdoWindow(
         timeline_body_layout.addWidget(self.timeline, stretch=1)
         layout.addWidget(timeline_body, stretch=1)
         self.reference_audio = ReferenceAudioController(self)
+        self.reference_audio.before_file_change = self._confirm_reference_audio_change
         self.reference_audio.set_project_offset_ms(
             self.reference_audio_offset_ms,
             notify=False,
@@ -2561,7 +2654,40 @@ class MidiToBdoWindow(
             self._reference_playback_state_changed
         )
         self.timeline.set_reference_audio(self.reference_audio)
+        self.reference_audio.timeline_changed.connect(self._extend_arrangement_clock_for_reference)
+        self.timeline.reference_audio_offset_requested.connect(lambda: edit_reference_audio_offset(self))
         return workspace
+
+    def _build_preview_transport(self) -> QFrame:
+        group = QFrame()
+        group.setObjectName("TransportGroup")
+        layout = QHBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(hig.CONTROL_GAP)
+        self.play_button = PillButton("", "ghost", FluentSymbol.PLAY)
+        self.play_button.setObjectName("TransportPlayButton")
+        self.play_button.clicked.connect(self._play_preview)
+        self.pause_button = PillButton("", "ghost", FluentSymbol.PAUSE)
+        self.pause_button.clicked.connect(self._pause_preview)
+        self.stop_button = PillButton("", "ghost", FluentSymbol.STOP)
+        self.stop_button.clicked.connect(lambda: self._stop_preview(reset_playhead=True))
+        for button in (self.play_button, self.pause_button, self.stop_button):
+            button.setFixedSize(hig.BUTTON_HEIGHT, hig.BUTTON_HEIGHT)
+            layout.addWidget(button)
+        for button, label in ((self.pause_button, "暂停"), (self.stop_button, "停止")):
+            button.setAccessibleName(tr(label))
+            button.setToolTip(tr(label))
+        self.timeline_loop_box = PillButton("", "ghost")
+        self.timeline_loop_box.setObjectName("TransportLoopButton")
+        set_fluent_symbol(
+            self.timeline_loop_box, FluentSymbol.REPEAT, checked_symbol=FluentSymbol.REPEAT_ACTIVE,
+        )
+        self.timeline_loop_box.setCheckable(True)
+        self.timeline_loop_box.setFixedSize(hig.BUTTON_HEIGHT, hig.BUTTON_HEIGHT)
+        self.timeline_loop_box.setAccessibleName(tr("循环区间"))
+        self.timeline_loop_box.setToolTip(tr("循环播放 A–B 时间区间"))
+        layout.addWidget(self.timeline_loop_box)
+        return group
 
     def _build_performance_strip(self) -> QWidget:
         """Compact process/audio telemetry below the multitrack timeline."""
@@ -2570,10 +2696,10 @@ class MidiToBdoWindow(
         strip.setObjectName("PerformanceStrip")
         strip.setFixedHeight(30)
         layout = QHBoxLayout(strip)
-        layout.setContentsMargins(12, 2, 12, 2)
-        layout.setSpacing(18)
-        caption = QLabel(tr("工程状态"))
-        caption.setObjectName("PerformanceCaption")
+        layout.setContentsMargins(hig.GROUP_GAP, 2, hig.GROUP_GAP, 2)
+        layout.setSpacing(hig.PANEL_PADDING)
+        self.timeline_meta = ElidedLabel(tr("等待 MIDI"), maximum_hint_width=130)
+        self.timeline_meta.setObjectName("TimelineMeta")
         self.process_cpu_label = QLabel("CPU --")
         self.process_cpu_label.setObjectName("PerformanceMetric")
         self.process_ram_label = QLabel("RAM --")
@@ -2589,28 +2715,31 @@ class MidiToBdoWindow(
         self.audio_load_label.setObjectName("PerformanceMetric")
         self.active_voice_label = QLabel(tr("声部 --"))
         self.active_voice_label.setObjectName("PerformanceMetric")
-        self.project_note_status = QLabel(tr("未选择轨道"))
+        self.project_note_status = ElidedLabel(tr("未选择轨道"))
         self.project_note_status.setObjectName("ProjectMusicStatus")
-        tooltip = tr("当前 BDO Music Composer 进程；每秒低开销采样一次")
-        for widget in (
-            caption,
-            self.process_cpu_label,
-            self.process_ram_label,
-            self.audio_load_label,
-            self.active_voice_label,
-        ):
-            widget.setToolTip(tooltip)
-        layout.addWidget(caption)
+        self.project_note_status.setTextFormat(Qt.PlainText)
+        self.project_note_status.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        layout.addWidget(self.timeline_meta)
         layout.addWidget(self.ensemble_metric_label)
-        layout.addWidget(self.project_note_status)
         layout.addStretch(1)
-        layout.addWidget(self.audio_load_label)
-        layout.addWidget(self.active_voice_label)
-        # Keep diagnostics available to tests and support tooling without
-        # letting CPU/RAM dominate the default musical status strip.
-        self.process_cpu_label.hide()
-        self.process_ram_label.hide()
+        for widget in (
+            self.project_note_status, self.audio_load_label, self.active_voice_label,
+            self.process_cpu_label, self.process_ram_label,
+        ):
+            widget.setParent(strip)
+            widget.hide()
         return strip
+
+    def _show_runtime_status(self) -> None:
+        self._update_process_metrics()
+        details = "\n".join(label.text() for label in (
+            self.process_cpu_label, self.process_ram_label,
+            self.audio_load_label, self.active_voice_label,
+        ))
+        choose_prompt(
+            self, tr("运行状态"), details, (("confirm", tr("确定")),),
+            default="confirm", cancel="confirm",
+        )
 
     def _update_process_metrics(self) -> None:
         if not hasattr(self, "process_cpu_label"):
@@ -2634,7 +2763,6 @@ class MidiToBdoWindow(
             trf("音频 {load:.0f}% · XRUN {count}", load=audio_load * 100.0, count=underruns)
         )
         self.active_voice_label.setText(trf("声部 {count}", count=active_voices))
-        self._update_ensemble_metric()
 
     def _active_ensemble_instrument_ids(self) -> tuple[int, ...]:
         return unique_performance_instrument_ids(
@@ -2685,12 +2813,9 @@ class MidiToBdoWindow(
             and self.page_stack.currentWidget() is self.home_page
         )
         if on_home and hasattr(self, "home_library_stack"):
-            target = (
-                self.game_score_list
-                if self.home_library_stack.currentIndex() == 1
-                else self.project_list
-            )
-            item = target.currentItem()
+            page_index = self.home_library_stack.currentIndex()
+            target = {0: self.project_list, 1: self.game_score_list}.get(page_index)
+            item = target.currentItem() if target is not None else None
             data = item.data(Qt.UserRole) if item is not None else None
             if isinstance(data, dict):
                 try:
@@ -2742,13 +2867,11 @@ class MidiToBdoWindow(
                 for track in melodic_tracks
             ]
             tracks_by_label = dict(zip(labels, melodic_tracks, strict=True))
-            selected_label, accepted = QInputDialog.getItem(
+            selected_label, accepted = choose_item(
                 self,
                 tr("选择音乐参考目标轨"),
                 tr("请选择要打开的旋律乐器轨："),
                 labels,
-                0,
-                False,
             )
             if not accepted:
                 return
@@ -3125,8 +3248,11 @@ class MidiToBdoWindow(
             editor.set_transcription_status(self._transcription_ui_status_spec)
 
     def retranslate_dynamic_content(self) -> None:
-        """Refresh cached status text without changing its string API."""
+        """Refresh localized widths and cached status text."""
 
+        self._sync_caption_button_widths()
+        self.timeline.refresh_reference_audio_controls()
+        self.timeline.update()
         self.transcription_ui_status = str(self._transcription_ui_status_spec)
         editor = self.active_transcription_editor
         if editor is not None:
@@ -4372,13 +4498,11 @@ class MidiToBdoWindow(
             for index, (label, start_ms, _end_ms, _group_id)
             in enumerate(items)
         ]
-        selected, accepted = QInputDialog.getItem(
+        selected, accepted = choose_item(
             editor,
             tr("待审队列"),
             tr("选择后只定位并设置 A–B，不会自动选择或写入音符："),
             labels,
-            0,
-            False,
         )
         if not accepted:
             return
@@ -4500,6 +4624,7 @@ class MidiToBdoWindow(
             status=tr("正在分析参考音频…"),
         )
         worker.start()
+        self._record_usage_feature("transcription")
 
     def _redecode_transcription_range(self) -> None:
         state = self.transcription_session.state
@@ -5445,6 +5570,8 @@ class MidiToBdoWindow(
                 return None
 
         report = plan.report()
+        if plan.project_changed:
+            self._record_usage_feature("arrangement_edit")
         self._set_transcription_status(
             trf(
                 "已应用 {created} 个音符 · 已满足 {satisfied} · "
@@ -5477,16 +5604,38 @@ class MidiToBdoWindow(
         return system_uses_dark_theme()
 
     def _browse_midi(self) -> None:
+        self._pick_midi()
+
+    def _quick_convert_midi(self) -> None:
+        if self.worker is not None or not self._pick_midi():
+            return
+        summary = trf(
+            "{tracks} 轨 · {notes} 音符 · {numerator}/{denominator} 拍",
+            tracks=len(self.tracks),
+            notes=sum(len(track.notes) for track in self.tracks),
+            numerator=self.time_sig,
+            denominator=self.time_sig_denominator,
+        )
+        if not self.owner_id:
+            summary += "\n" + tr("导出时需要读取 Owner ID。")
+        choice = choose_prompt(
+            self, tr("MIDI 转 BDO"), trf("曲谱：{name}", name=self.output_name.text()),
+            (("edit", tr("继续编辑")), ("export", tr("导出 BDO"))),
+            detail=summary, default="export", cancel="edit",
+        )
+        if choice == "export":
+            self._convert()
+
+    def _pick_midi(self) -> bool:
         path, _ = QFileDialog.getOpenFileName(
             self,
             tr("选择 MIDI 文件"),
             str(DEFAULT_MIDI_DIR),
             tr("MIDI 文件 (*.mid *.midi);;所有文件 (*.*)"),
         )
-        if path:
-            self._open_midi_path(Path(path))
+        return bool(path) and self._open_midi_path(Path(path))
 
-    def _open_midi_path(self, path: Path) -> None:
+    def _open_midi_path(self, path: Path) -> bool:
         import_settings = ConversionSettings.from_preferences(
             self.config.get("conversion_settings")
         )
@@ -5494,7 +5643,8 @@ class MidiToBdoWindow(
             str(path),
             conversion_settings=import_settings,
         ):
-            return
+            self._record_usage_issue("import_failed")
+            return False
         self.autosave_project_dir = None
         self.autosave_source_copy = None
         self.file_label.setProperty("i18nSkip", True)
@@ -5506,6 +5656,7 @@ class MidiToBdoWindow(
         self._schedule_timeline_validation_refresh()
         self._record_recent("midi", path, path.stem)
         self._show_workspace()
+        self._record_usage_feature("midi_import")
         repair_count = sum(
             int(repair.count)
             for repair in getattr(self, "_last_midi_import_repairs", ())
@@ -5527,8 +5678,11 @@ class MidiToBdoWindow(
                 duration_ms=2800,
             )
 
+        return True
+
     def _open_bdo_score_path(self, path: Path) -> None:
         if not self._load_bdo_info(path):
+            self._record_usage_issue("import_failed")
             return
         self.project_id = new_project_id()
         self.autosave_project_dir = None
@@ -5542,18 +5696,24 @@ class MidiToBdoWindow(
         self._schedule_timeline_validation_refresh()
         self._record_recent("bdo", path, path.stem or path.name)
         self._show_workspace()
+        self._record_usage_feature("project_open")
 
     def _load_bdo_info(self, path: Path) -> bool:
         try:
             document = read_score(path)
-            snapshot = read_bdo_score(path, allow_trailing_data=True)
+            snapshot = snapshot_from_decoded_score(document, allow_trailing_data=True)
             tracks = track_states_from_bdo_score(snapshot)
             if not tracks:
                 raise ValueError(tr("游戏曲谱不包含乐器轨道"))
+        except BdoUnsupportedVersionError as error:
+            self.status_label.setText(tr("打开游戏曲谱失败"))
+            self._show_bdo_version_notice(error)
+            return False
         except Exception as exc:
             self.status_label.setText(tr("打开游戏曲谱失败"))
-            self.inspector_text.setText(trf("无法读取游戏曲谱：{error}", error=exc))
-            QMessageBox.warning(self, tr("打开游戏曲谱失败"), trf("无法读取游戏曲谱：{error}", error=exc))
+            message = trf("无法读取游戏曲谱：{error}", error=exc)
+            self.inspector_text.setText(message)
+            self.show_toast(message, kind="error", duration_ms=7000)
             return False
 
         self._close_all_note_editors()
@@ -5566,13 +5726,12 @@ class MidiToBdoWindow(
         self.reference_audio.set_volume_percent(self.ui_preference_binding.reference_volume_percent, notify=False)
         self._set_reference_alignment(0.0, 0.0)
         self.reference_audio_path = ""
-        self.reference_audio_relink_required = False
+        self._set_reference_audio_relink_required(False)
         self._stop_preview()
         self.project_commands.clear()
         self._clear_track_selection()
         self.source_format = "bdo"
         self._reset_project_timeline_metadata()
-        self.bdo_source_snapshot = snapshot
         self.bdo_source_document = document
         self.bpm = int(snapshot.bpm)
         self.time_sig = int(snapshot.time_signature)
@@ -5609,12 +5768,22 @@ class MidiToBdoWindow(
         start_dir = str(AUTO_SAVE_DIR if AUTO_SAVE_DIR.is_dir() else ROOT)
         path, _ = QFileDialog.getOpenFileName(
             self,
-            tr("打开自动保存工程"),
+            tr("打开工程或曲谱"),
             start_dir,
-            tr("工程文件 (project.json);;JSON 文件 (*.json);;所有文件 (*.*)"),
+            ";;".join((
+                tr("工程与曲谱 (*.json *.bdo *.bdom)"),
+                tr("BDO 曲谱 (*.bdo *.bdom)"),
+                tr("JSON 文件 (*.json)"),
+                tr("所有文件 (*.*)"),
+            )),
         )
-        if path:
-            self._load_project(Path(path))
+        if not path:
+            return
+        document = Path(path)
+        if document.suffix.casefold() in {".bdo", ".bdom"}:
+            self._open_bdo_score_path(document)
+        else:
+            self._load_project(document)
 
     def _save_current_project(self) -> None:
         if not self.tracks:
@@ -5851,19 +6020,13 @@ class MidiToBdoWindow(
         )
 
         source_document = None
-        source_snapshot = None
         if source_format == "bdo" and midi_path is not None:
             try:
                 source_document = read_score(midi_path)
-                source_snapshot = read_bdo_score(
-                    midi_path,
-                    allow_trailing_data=True,
-                )
             except Exception:
                 # The project snapshot remains authoritative. Only exact-byte
                 # reuse is unavailable when its provenance cannot be reread.
                 source_document = None
-                source_snapshot = None
 
         loading_generation = self.project_lifecycle_controller.begin_loading(
             "restore project"
@@ -5880,7 +6043,7 @@ class MidiToBdoWindow(
             )
             self.reference_layer_settings = plan.reference.layers_payload()
             self.reference_audio_path = ""
-            self.reference_audio_relink_required = False
+            self._set_reference_audio_relink_required(False)
             self.project_id = open_request.project_id
             self.autosave_project_dir = project_path.parent
             self.autosave_source_copy = open_request.source_copy_path
@@ -5917,7 +6080,6 @@ class MidiToBdoWindow(
             self.reverb, self.delay, self.chorus = (
                 plan.master_effects.legacy_values()
             )
-            self.bdo_source_snapshot = source_snapshot
             self.bdo_source_document = source_document
             self.bpm = plan.bpm
             self.time_sig = plan.time_signature
@@ -5956,7 +6118,7 @@ class MidiToBdoWindow(
                 reference_audio_restored = False
             if reference_audio_restored:
                 self.reference_audio_path = self.reference_audio.audio_path
-            self.reference_audio_relink_required = bool(
+            self._set_reference_audio_relink_required(
                 plan.reference.was_attached and not reference_audio_restored
             )
             self._refresh_tracks()
@@ -5988,6 +6150,7 @@ class MidiToBdoWindow(
             self.output_name.text() or project_path.parent.name,
         )
         self._show_workspace()
+        self._record_usage_feature("project_open")
 
     def _apply_conversion_settings(
         self,
@@ -6194,6 +6357,8 @@ class MidiToBdoWindow(
     ) -> None:
         if track not in self.tracks:
             return
+        if self.selected_track is not track:
+            self._select_track(track)
         if not transcription_mode and not arrangement_clip_id:
             clips = track_clips(track)
             if len(clips) == 1:
@@ -6208,13 +6373,11 @@ class MidiToBdoWindow(
                     )
                     for index, clip in enumerate(clips)
                 ]
-                selected, accepted = QInputDialog.getItem(
+                selected, accepted = choose_item(
                     self,
                     tr("选择要编辑的片段"),
                     tr("此轨道包含多个片段，请明确选择编辑范围："),
                     labels,
-                    0,
-                    False,
                 )
                 if not accepted:
                     return
@@ -6226,11 +6389,13 @@ class MidiToBdoWindow(
             and str(getattr(value, "arrangement_clip_id", "") or "")
             == arrangement_clip_id
         ), None)
-        if existing is not None and existing.isVisible():
-            existing.showNormal()
-            existing.raise_()
-            existing.activateWindow()
+        if existing is not None and (existing.isVisible() or existing.property("workbenchEmbedded")):
+            if not existing.property("workbenchEmbedded"):
+                existing.showNormal()
+                existing.raise_()
+                existing.activateWindow()
             self._activate_note_editor(existing)
+            existing.canvas.setFocus(Qt.FocusReason.OtherFocusReason)
             return
         editor_key: object = (
             track_id
@@ -6240,12 +6405,11 @@ class MidiToBdoWindow(
         editor_track = track
         editor_clip_scope = None
         if arrangement_clip_id:
-            editor_clip_scope = clip_editor_scope(track, arrangement_clip_id)
-            editor_track = deepcopy(track)
-            editor_track.notes = list(
-                clip_editor_notes(track, arrangement_clip_id)
-            )
-            editor_track.arrangement_clips = []
+            editor_clip_scope, editor_notes = prepare_clip_editor(track, arrangement_clip_id)
+            # The editor owns its mutable metadata. Sibling notes and Clip
+            # geometry have no role in that draft and need no deep copy.
+            editor_track = deepcopy(replace(track, notes=[], arrangement_clips=[]))
+            editor_track.notes = list(editor_notes)
         dialog = MidiNoteEditorDialog(
             self,
             editor_track,
@@ -6255,6 +6419,7 @@ class MidiToBdoWindow(
             transcription_mode=transcription_mode,
             pitch_plan=self._pitch_transform_plan,
             clip_scope=editor_clip_scope,
+            embedded_parent=None if transcription_mode else self.workbench.editors,
         )
         dialog.arrangement_clip_id = arrangement_clip_id
         dialog.arrangement_clip_fingerprint = (
@@ -6280,8 +6445,9 @@ class MidiToBdoWindow(
             dialog.refresh_fields()
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self._note_editors[editor_key] = dialog
+        if not transcription_mode:
+            self.workbench.attach_editor(dialog)
         self._activate_note_editor(dialog)
-        self._refresh_transcription_workspace()
         if transcription_mode and self.transcription_session.candidates:
             QTimer.singleShot(0, self._start_reference_timbre_analysis)
         if (
@@ -6292,6 +6458,7 @@ class MidiToBdoWindow(
         ):
             QTimer.singleShot(0, self._restore_cached_transcription)
         def editor_finished(_result: int) -> None:
+            self.workbench.editor_finished(dialog)
             if transcription_mode:
                 self._invalidate_transcription_rhythm_diagnostic()
             if self.active_transcription_editor is dialog:
@@ -6311,6 +6478,8 @@ class MidiToBdoWindow(
                 self._schedule_transcription_assist_refresh()
         dialog.finished.connect(editor_finished)
         dialog.show()
+        self._record_usage_feature("note_editor")
+        dialog.canvas.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _open_clip_note_editor(
         self, track: TrackState, clip_id: str
@@ -6365,7 +6534,7 @@ class MidiToBdoWindow(
 
     def _open_midi_optimizer(self, target_track_id: int | None = None) -> None:
         if not self.tracks:
-            QMessageBox.information(self, tr("MIDI 优化"), tr("请先导入 MIDI。"))
+            self.show_toast(tr("请先导入 MIDI。"))
             return
         scoped_tracks = (
             self.tracks
@@ -6383,6 +6552,7 @@ class MidiToBdoWindow(
             )
             return
         dialog = MidiOptimizeDialog(self, target_track_id)
+        self._record_usage_feature("optimizer")
         if dialog.exec() != QDialog.Accepted:
             return
         applied_target_track_id = dialog.target_track_id
@@ -6500,12 +6670,15 @@ class MidiToBdoWindow(
             context=context,
         ).issues
 
-    def _show_acknowledgements(self) -> None:
-        dialog = AcknowledgementsDialog(
-            dark_theme=self._system_uses_dark_theme(),
-            parent=self,
-        )
-        dialog.exec()
+    def _show_about(self) -> None:
+        dialog = AboutDialog(parent=self)
+        exec_floating_panel(dialog)
+        dialog.deleteLater()
+
+    def _show_feedback(self) -> None:
+        dialog = FeedbackDialog(self, tracker=self.feedback_status)
+        exec_floating_panel(dialog)
+        dialog.deleteLater()
 
     def _show_release_notes(self) -> None:
         if not RELEASE_NOTES_UI_ENABLED:
@@ -6547,12 +6720,11 @@ class MidiToBdoWindow(
         self.reference_audio.set_volume_percent(self.ui_preference_binding.reference_volume_percent, notify=False)
         self._set_reference_alignment(0.0, 0.0)
         self.reference_audio_path = ""
-        self.reference_audio_relink_required = False
+        self._set_reference_audio_relink_required(False)
         self.midi_path = str(path)
         self.bpm = imported.bpm
         self.source_format = "midi"
         self._reset_project_timeline_metadata()
-        self.bdo_source_snapshot = None
         self.bdo_source_document = None
         # A raw MIDI has no BDO master-effect layer. Starting from neutral
         # values prevents the previously open score from leaking into it.
@@ -6578,11 +6750,14 @@ class MidiToBdoWindow(
 
     def _clear_track_selection(self) -> None:
         self.selected_track = None
-        if hasattr(self, "timeline"):
+        if hasattr(self, "timeline") and self.timeline.selected_track is not None:
             self.timeline.set_selected_track(None)
+        if hasattr(self, "workbench"):
+            self.workbench.select_track(None)
         if hasattr(self, "project_note_status"):
             self.project_note_status.setText(tr("未选择轨道"))
         self._sync_toolbar_global_gain()
+
     def _refresh_tracks(self) -> None:
         self._apply_workspace_change(ModelChange.structure())
     def _apply_workspace_change(self, change: ModelChange) -> None:
@@ -6862,8 +7037,14 @@ class MidiToBdoWindow(
         self._select_track(track)
         self._delete_selected_track()
 
-    def _select_track(self, track: TrackState) -> None:
+    def _select_track(self, track: TrackState | None) -> None:
+        if track is None:
+            self._clear_track_selection()
+            self.inspector_text.clear()
+            return
         self.selected_track = track
+        if hasattr(self, "workbench"):
+            self.workbench.select_track(track)
         if self.timeline.selected_track is not track:
             self.timeline.set_selected_track(track)
         if hasattr(self, "project_note_status"):
@@ -6873,21 +7054,6 @@ class MidiToBdoWindow(
                 f"{_ui_bdo_instrument_name(track.bdo_instrument_id)} · "
                 f"{note_summary}"
             )
-        self.inspector_text.setText(trf(
-            "{track} · {count} 音符 · {pitch_range} · BDO: {instrument} · FX: {articulation}",
-            track=track.display_name,
-            count=len(project_track_notes(track)),
-            pitch_range=(
-                f"{note_name(min(note.pitch for note in project_track_notes(track)))} - "
-                f"{note_name(max(note.pitch for note in project_track_notes(track)))}"
-                if project_track_notes(track) else "-"
-            ),
-            instrument=trv(_ui_bdo_instrument_source(track.bdo_instrument_id)),
-            articulation=articulation_display_value(
-                track.bdo_instrument_id,
-                track.articulation_type,
-            ),
-        ))
         self.timeline.update()
 
     def _show_project_summary(self) -> None:
@@ -6918,96 +7084,16 @@ class MidiToBdoWindow(
         dialog = TrackPitchDialog(self, track, self._pitch_transform_plan)
         if dialog.exec() != QDialog.Accepted:
             return
-        selected_offset = dialog.selected_semitone_offset()
-        current = self._pitch_transform_plan.override_for(track.track_id)
-        current_offset = current.semitones if current is not None else 0
-        if selected_offset == current_offset:
-            return
-        self._push_project_snapshot()
-        self._pitch_transform_plan = (
-            self._pitch_transform_plan.with_track_semitones(
-                track.track_id,
-                selected_offset,
-            )
-        )
-        self._restart_preview_after_timeline_change()
-        self._schedule_timeline_validation_refresh()
-        self._autosave_project("track transpose", immediate=True)
-        self._select_track(track)
-        self.show_toast(
-            trf(
-                "{track} · 轨道移调 {track_transpose:+d} · 最终移调 {effective:+d} 半音",
-                track=track.display_name,
-                track_transpose=selected_offset,
-                effective=self._effective_track_transpose(track),
-            ),
-            kind="success",
-        )
+        apply_track_pitch(self, track, dialog.selected_semitone_offset())
 
     def _show_effects_placeholder(self, track: TrackState) -> None:
         self.selected_track = track
         dialog = TrackFxDialog(self, track)
         if dialog.exec() != QDialog.Accepted:
             return
-        selected_mode = (
-            dialog.selected_marnian_synth_mode()
-            if track.bdo_instrument_id in MARNIAN_SYNTH_INSTRUMENT_IDS
-            else "basic"
-        )
-        selected_settings = dialog.selected_track_settings()
-        changed_send_indices = dialog.changed_send_indices()
-        if (
-            selected_mode == track.marnian_synth_mode
-            and selected_settings == tuple(track.bdo_track_settings)
-        ):
-            return
-        self._push_project_snapshot()
-        previous_mode = str(track.marnian_synth_mode)
-        previous_volume = int(track.bdo_track_volume)
-        previous_settings = tuple(track.bdo_track_settings)
-        track.marnian_synth_mode = selected_mode
-        try:
-            inherited_from = (
-                inherit_game_instrument_mix(self.tracks, track)
-                if selected_mode != previous_mode
-                else None
-            )
-            if inherited_from is None:
-                base_settings = list(selected_settings)
-            else:
-                base_settings = list(raw_track_settings(track.bdo_track_settings))
-                for index in changed_send_indices:
-                    base_settings[index] = selected_settings[index]
-            track.bdo_track_settings = tuple(base_settings)
-            _changed_track_ids = propagate_game_instrument_mix(
-                self.tracks,
-                track,
-                volume=False,
-                sends=bool(changed_send_indices),
-                send_indices=changed_send_indices,
-            )
-        except (TypeError, ValueError) as exc:
-            track.marnian_synth_mode = previous_mode
-            track.bdo_track_volume = previous_volume
-            track.bdo_track_settings = previous_settings
-            self.timeline.update()
-            self.show_toast(
-                trf("无法同步游戏乐器 FX：{error}", error=exc),
-                kind="error",
-            )
-            return
-        committed_settings = tuple(track.bdo_track_settings)
-        self.show_toast(
-            (
-                f"{track.display_name} · FX "
-                f"R{committed_settings[TRACK_REVERB_SEND_INDEX]} "
-                f"D{committed_settings[TRACK_DELAY_SEND_INDEX]} "
-                f"C{committed_settings[TRACK_CHORUS_SEND_INDEX]}"
-            ),
-            kind="success",
-        )
-        self._schedule_timeline_validation_refresh()
-        self._on_preview_mapping_changed()
+        apply_track_fx(self, track, dialog)
+        if hasattr(self, "workbench"):
+            self.workbench.inspector.refresh(self.selected_track)
 
     def _clear_solo(self) -> None:
         for track in self.tracks:
@@ -7032,13 +7118,11 @@ class MidiToBdoWindow(
 
     def _sync_preview_state(self) -> None:
         tracks = list(preview_tracks(self.tracks))
-        preview_blockers = self._realtime_preview_blockers(tracks)
-        source_mode = preview_source_mode(self.audio_sources)
         has_reference = bool(self.reference_audio.audio_path)
         bdo_running = self.realtime_preview_active
         bdo_loading = self.realtime_preview_loading
         reference_state = self.reference_audio.player.playbackState()
-        reference_running = reference_state != QMediaPlayer.PlaybackState.StoppedState
+        reference_running = self.reference_audio.is_playing or reference_state != QMediaPlayer.PlaybackState.StoppedState
         running = bdo_running or reference_running
         paused = running and (
             self.preview_transport_coordinator.pause_requested
@@ -7053,43 +7137,13 @@ class MidiToBdoWindow(
         play_label = tr("播放" if can_play else "无法原声试听")
         self.play_button.setAccessibleName(play_label)
         self.play_button.setToolTip(play_label)
-        if getattr(self, "_timeline_controls_compact", False):
-            self.play_button.setText("")
-            self.play_button.setFixedWidth(34)
-        else:
-            self.play_button.setMinimumWidth(0)
-            self.play_button.setMaximumWidth(16777215)
-            self.play_button.setText(play_label)
-        if hasattr(self, "preview_source_badge"):
-            if (
-                self.realtime_preview_source == "generic"
-                and (self.realtime_preview_active or self.realtime_preview_loading)
-            ):
-                badge_text = tr("内置通用 MIDI · 非游戏原声")
-            elif not self.realtime_audio.available():
-                badge_text = tr("无可用音频设备")
-            elif source_mode == "generic":
-                badge_text = tr("内置通用音源")
-            elif preview_blockers:
-                badge_text = tr("音源包不可用")
-            elif self.realtime_audio.status.cache_misses:
-                badge_text = tr("等待预取")
+        if hasattr(self, "preview_source_menu"):
+            if self.preview_source_menu.parentWidget().isVisible():
+                self._refresh_preview_source_status(tracks)
             else:
-                badge_text = tr("音源包")
-            self.preview_source_badge.setText(badge_text)
-            detail = tr("点击切换试听音源；不会改变导出结果")
-            if source_mode == "pack" and preview_blockers:
-                detail += "\n" + str(preview_blockers[0])
-            self.preview_source_badge.setToolTip(detail)
-            self._sync_preview_source_menu()
+                self._sync_preview_source_menu()
         self.pause_button.setEnabled(running and not paused)
         self.stop_button.setEnabled(running)
-
-    def _sync_preview_source_menu(self) -> None:
-        actions = getattr(self, "preview_source_actions", {})
-        mode = preview_source_mode(self.audio_sources)
-        for action_mode, action in actions.items():
-            action.setChecked(action_mode == mode)
 
     def _set_preview_source_mode(self, mode: str) -> None:
         selected_mode = str(mode or "").casefold()
@@ -7100,8 +7154,8 @@ class MidiToBdoWindow(
                 self.audio_sources, selected_mode
             )
             if not sample_pack and not audio_root:
-                self._open_settings(2, selected_mode)
                 self._sync_preview_source_menu()
+                self._open_settings(2, selected_mode)
                 return
         if selected_mode == preview_source_mode(self.audio_sources):
             self._sync_preview_source_menu()
@@ -7132,41 +7186,41 @@ class MidiToBdoWindow(
                 self._start_preview_from(position)
             )
 
-    def _realtime_preview_blockers(self, tracks: list[TrackState]) -> list[str]:
+    def _preview_pack_location_error(self, tracks: list[TrackState]) -> str:
         if not tracks:
-            return [tr("没有可试听轨道")]
+            return tr("没有可试听轨道")
         if not BDO_SAMPLE_MAP_PATH.is_file():
-            return [tr("缺少解包后的 BDO Wwise 映射")]
+            return tr("缺少解包后的 BDO Wwise 映射")
         if not self.audio_sources.get("audio_root") or not Path(self.audio_sources["audio_root"]).is_dir():
-            return [
-                trf(
-                    "BDO 音源目录不可用：{path}",
-                    path=self.audio_sources["audio_root"],
-                )
-            ]
+            return trf(
+                "BDO 音源目录不可用：{path}",
+                path=self.audio_sources.get("audio_root", ""),
+            )
+        return ""
+
+    def _realtime_preview_blockers(self, tracks: list[TrackState]) -> list[str]:
+        location_error = self._preview_pack_location_error(tracks)
+        if location_error:
+            return [location_error]
         try:
+            sources: dict[tuple[int, str], str] = {}
+            for track in tracks:
+                mode = str(getattr(track, "marnian_synth_mode", "basic") or "basic")
+                sources.setdefault((track.bdo_instrument_id, mode), track.display_name)
             sample_map = BdoSampleMap(
                 BDO_SAMPLE_MAP_PATH,
                 self.audio_sources["audio_root"],
+                instrument_modes=sources,
             )
-            for track in tracks:
-                synth_mode = str(
-                    getattr(track, "marnian_synth_mode", "basic") or "basic"
-                )
-                if not sample_map.has_instrument(
-                    track.bdo_instrument_id,
-                    synth_mode,
-                ):
+            for (instrument_id, mode), track_name in sources.items():
+                if not sample_map.has_instrument(instrument_id, mode):
                     return [tr("存在未绑定已命名游戏 BNK 的乐器")]
-                if not sample_map.has_complete_media(
-                    track.bdo_instrument_id,
-                    synth_mode,
-                ):
+                if not sample_map.has_complete_media(instrument_id, mode):
                     return [
                         trf(
                             "{track} 的 {mode} 游戏 WAV 音源不完整",
-                            track=track.display_name,
-                            mode=synth_mode,
+                            track=track_name,
+                            mode=mode,
                         )
                     ]
         except Exception as exc:
@@ -7208,7 +7262,15 @@ class MidiToBdoWindow(
         self._claim_playback_focus(None)
         action = self.preview_transport_coordinator.play_action()
         if action is PreviewPlayAction.WAIT_FOR_LOAD:
+            resume_reference = self.preview_transport_coordinator.pause_requested
             self.preview_transport_coordinator.request_play()
+            if resume_reference:
+                self._sync_reference_to_position(
+                    self.realtime_preview_start_ms, play=True, force=True,
+                )
+                if self.reference_audio.is_playing:
+                    self.reference_status_timer.start()
+                self._sync_preview_state()
             self.status_label.setText(
                 tr(
                     "正在准备通用 MIDI 预览…"
@@ -7248,13 +7310,15 @@ class MidiToBdoWindow(
             self.timeline.set_playhead(start_ms)
         source_tracks = list(preview_tracks(self.tracks))
         if not source_tracks:
+            if self.reference_audio.audio_path:
+                self._start_reference_audio_from(start_ms)
+                return
             QMessageBox.warning(
                 self,
                 tr("没有可试听轨道"),
                 tr("当前没有可试听轨道，请取消静音或 Solo。"),
             )
             return
-        tracks = self._project_tracks_for_preview(source_tracks)
         if not self.realtime_audio.available():
             # QAudioSink construction can block inside the Windows backend when
             # the machine has no output device.  Fail before starting either
@@ -7268,9 +7332,14 @@ class MidiToBdoWindow(
             self.timeline.set_playhead(0.0)
         self.preview_transport_coordinator.invalidate()
         self.last_reported_underruns = 0
-        blockers = self._realtime_preview_blockers(tracks)
         source_mode = preview_source_mode(self.audio_sources)
         use_generic = source_mode == "generic"
+        blockers = self._realtime_preview_blockers(source_tracks) if not use_generic else []
+        if source_mode == "pack":
+            self._preview_pack_diagnostic = (
+                (self._preview_pack_scope(source_tracks), defer_tr(blockers[0]))
+                if blockers else None
+            )
         if source_mode == "pack" and blockers:
             self.status_label.setText(tr("音源包不可用"))
             self.show_toast(
@@ -7283,8 +7352,8 @@ class MidiToBdoWindow(
             )
             self._sync_preview_state()
             return
+        tracks = self._project_tracks_for_preview(source_tracks)
         try:
-            self.realtime_audio.start()
             if use_generic:
                 self.realtime_audio.load_procedural_project_async(
                     tracks,
@@ -7316,16 +7385,10 @@ class MidiToBdoWindow(
         )
         self.timeline.set_buffer_progress(0.0, True)
         self.realtime_status_timer.start()
-        if self.reference_audio.audio_path:
-            # Let the already-decoded reference layer respond immediately
-            # while a local/game source preloads.  Once preload completes the
-            # real-time engine seeks to this clock and becomes the transport
-            # master, avoiding a silent Play button on first use.
-            self.reference_audio.set_position(start_ms)
-            audio_position = self.reference_audio.project_to_audio(start_ms)
-            if audio_position >= 0.0 and (not self.reference_audio.duration_ms or audio_position < self.reference_audio.duration_ms):
-                self.reference_audio.play()
-                self.reference_status_timer.start()
+        # Use the reference clock until the real-time engine is ready.
+        self._sync_reference_to_position(start_ms, play=True, force=True)
+        if self.reference_audio.is_playing:
+            self.reference_status_timer.start()
         self.status_label.setText(
             tr(
                 "正在准备通用 MIDI 预览…"
@@ -7335,42 +7398,9 @@ class MidiToBdoWindow(
         )
         self._sync_preview_state()
 
-    def _start_reference_audio_from(self, start_ms: float) -> None:
-        if not self.reference_audio.audio_path:
-            return
-        reference_duration = self.reference_audio.duration_ms
-        if reference_duration > 0.0 and start_ms >= self.reference_audio.project_end_ms - 1:
-            start_ms = 0.0
-            self.timeline.set_playhead(0.0)
-        if start_ms < self.reference_audio.project_start_ms:
-            # With no BDO engine there is no project clock to advance through
-            # leading silence, so begin at the first audible project frame.
-            start_ms = max(0.0, self.reference_audio.project_start_ms)
-            self.timeline.set_playhead(start_ms)
-        self.reference_audio.set_position(start_ms)
-        audio_position = self.reference_audio.project_to_audio(start_ms)
-        if audio_position >= 0.0 and (not reference_duration or audio_position < reference_duration):
-            self.reference_audio.play()
-            self.reference_status_timer.start()
-        self.status_label.setText(tr("参考音频播放"))
-        self._sync_preview_state()
-
-    def _sync_reference_to_position(
-        self,
-        position_ms: float,
-        *,
-        play: bool,
-        force: bool = False,
-    ) -> None:
-        if not self.reference_audio.audio_path:
-            return
-        self.reference_last_resync_at = synchronize_reference_audio(
-            self.reference_audio, position_ms, play=play, force=force,
-            last_resync_at=self.reference_last_resync_at,
-        )
-
     def _pause_preview(self) -> None:
         self.preview_transport_coordinator.request_pause()
+        reference_was_playing = self.reference_audio.is_playing
         if self.realtime_preview_active and not self.realtime_preview_loading:
             try:
                 self.realtime_audio.pause()
@@ -7386,6 +7416,12 @@ class MidiToBdoWindow(
             self.timeline.set_track_levels({})
         self.reference_audio.pause()
         self.reference_status_timer.stop()
+        if reference_was_playing and (
+            self.realtime_preview_loading or not self.realtime_preview_active
+        ):
+            self.timeline.set_playhead(self.reference_audio.project_position_ms, follow=True)
+            if self.realtime_preview_loading:
+                self.realtime_preview_start_ms = self.timeline.playhead_ms
         self.status_label.setText(tr("试听暂停"))
         self._sync_preview_state()
 
@@ -7415,6 +7451,7 @@ class MidiToBdoWindow(
             and not self.preview_transport_coordinator.is_current(generation)
         ):
             return
+        self._record_usage_issue("preview_failed")
         QMessageBox.warning(self, tr("试听不可用"), message)
 
     def _poll_realtime_audio_status(self) -> None:
@@ -7435,6 +7472,7 @@ class MidiToBdoWindow(
                 self.preview_transport_coordinator.mark_ready(
                     self._validation_state(self.realtime_preview_tracks, details)
                 )
+                self._extend_arrangement_clock_for_reference()
                 resume_position = self.realtime_preview_start_ms
                 if self.reference_audio.is_playing:
                     resume_position = max(
@@ -7445,11 +7483,13 @@ class MidiToBdoWindow(
                 if self.preview_transport_coordinator.pause_requested:
                     self.reference_audio.pause()
                     self.reference_status_timer.stop()
+                    self.realtime_status_timer.stop()
                     self.timeline.set_buffer_progress(1.0, False)
                     self.status_label.setText(tr("试听暂停"))
                     self._sync_preview_state()
                     return
                 self.realtime_audio.play()
+                self._record_usage_feature("preview")
                 self.reference_status_timer.stop()
                 self._sync_reference_to_position(
                     resume_position,
@@ -7470,8 +7510,9 @@ class MidiToBdoWindow(
                 )
             status = self.realtime_audio.get_status()
         except AudioEngineError as exc:
+            self._record_usage_issue("preview_failed")
             self.realtime_status_timer.stop()
-            self.realtime_preview_active = False
+            self.preview_transport_coordinator.clear_session()
             self.timeline.set_buffer_progress(0.0, False)
             self.timeline.set_track_levels({})
             self.status_label.setText(tr("实时音频引擎已停止"))
@@ -7485,7 +7526,8 @@ class MidiToBdoWindow(
         )
         if (
             loop_range is not None
-            and status.state == "playing"
+            and status.state != "paused"
+            and not getattr(self.realtime_audio, "last_error", "")
             and status.position_ms >= loop_range[1]
         ):
             try:
@@ -7522,46 +7564,28 @@ class MidiToBdoWindow(
                 self.status_label.setText(trf("音频输出停止：{error}", error=self.realtime_audio.last_error))
             self._sync_preview_state()
 
-    def _poll_reference_audio_status(self) -> None:
-        if self.realtime_preview_active:
-            return
-        if not self.reference_audio.is_playing:
-            self.reference_status_timer.stop()
-            self._sync_preview_state()
-            return
-        position = self.reference_audio.project_position_ms
-        loop_range = (
-            self.timeline.time_range
-            if self.timeline_loop_box.isChecked()
-            else None
-        )
-        if loop_range is not None and position >= loop_range[1]:
-            self.reference_audio.set_position(loop_range[0])
-            self.reference_audio.play()
-            self.timeline.set_playhead(loop_range[0], follow=True)
-            return
-        self.timeline.set_playhead(position, follow=True)
-        if (
-            self.reference_audio.duration_ms > 0
-            and position >= self.reference_audio.project_end_ms - 1
-        ):
-            # Stop at decoded content, not MP3 backend padding.
-            self.reference_audio.pause()
-            self.reference_status_timer.stop()
-            self._sync_preview_state()
-
     def _seek_preview(self, ms: float) -> None:
-        was_playing = self.realtime_preview_active and self.realtime_audio.status.state == "playing"
         self.timeline.set_playhead(ms, follow=True)
-        if self.realtime_preview_active:
+        ms = self.timeline.playhead_ms
+        play_reference = self.reference_audio.is_playing
+        if self.realtime_preview_loading:
+            self.realtime_preview_start_ms = ms
+            play_reference = not self.preview_transport_coordinator.pause_requested
+        elif self.realtime_preview_active:
+            play_reference = self.realtime_audio.status.state == "playing"
             try:
                 self.realtime_audio.seek(ms)
-                if was_playing:
+                if play_reference:
                     self.realtime_audio.play()
             except AudioEngineError as exc:
                 self._on_preview_failed(str(exc))
-        self.reference_audio.set_position(ms)
-        self.reference_last_resync_at = time.monotonic()
+        if play_reference:
+            self._sync_reference_to_position(ms, play=True, force=True)
+            if self.realtime_preview_loading and self.reference_audio.is_playing:
+                self.reference_status_timer.start()
+        else:
+            self.reference_audio.set_position(ms)
+            self.reference_last_resync_at = time.monotonic()
         self._sync_preview_state()
 
     def _prepare_sample_pack(self, pack_path: str) -> str | None:
@@ -7655,7 +7679,7 @@ class MidiToBdoWindow(
 
     def _open_master_effects(self) -> None:
         dialog = MasterEffectsDialog(self, self._current_master_effects())
-        if dialog.exec() != QDialog.Accepted:
+        if exec_floating_panel(dialog) != QDialog.Accepted:
             return
         self._apply_master_effects(dialog.selected_master_effects())
 
@@ -7728,12 +7752,15 @@ class MidiToBdoWindow(
         old_effective_bpm = float(max(1, self.bpm_override or self.bpm))
         old_transpose = int(self.transpose)
         dialog = SettingsDialog(self)
-        dialog.settings_nav.setCurrentRow(max(0, min(3, int(initial_page))))
+        dialog.settings_nav.setCurrentRow(
+            max(0, min(dialog.settings_nav.count() - 1, int(initial_page)))
+        )
         if initial_preview_mode in PREVIEW_SOURCE_MODES:
             mode_index = dialog.preview_mode.findData(initial_preview_mode)
             dialog.preview_mode.setCurrentIndex(max(0, mode_index))
         while True:
-            if dialog.exec() != QDialog.Accepted:
+            if exec_floating_panel(dialog) != QDialog.Accepted:
+                dialog.deleteLater()
                 return
 
             selected_output_dir = Path(
@@ -7771,6 +7798,7 @@ class MidiToBdoWindow(
                 prepared_root = self._prepare_sample_pack(sample_pack)
                 if prepared_root is None:
                     if self.workspace_close_pending:
+                        dialog.deleteLater()
                         return
                     # Re-open the same dialog instance so every edit survives
                     # a cancelled or failed package preparation.
@@ -7886,12 +7914,21 @@ class MidiToBdoWindow(
         self.config["game_music_dir"] = self.game_music_dir_path
         self.instrument_art_dir = selected_instrument_art_dir
         self.config["instrument_art_dir"] = self.instrument_art_dir
+        motion_enabled = dialog.interface_motion.isChecked()
+        self.config[MOTION_CONFIG_KEY] = motion_enabled
+        self.setProperty(MOTION_PROPERTY, motion_enabled)
+        if not motion_enabled:
+            self.main_page_transition.finish()
+            self.home_library_motion.finish()
         self.update_settings = {
             **update_preferences(self.config),
             "enabled": dialog.update_enabled.isChecked(),
             "auto_download": dialog.update_auto_download.isChecked(),
             "source": str(dialog.update_source.currentData() or "auto"),
         }
+        usage_preferences = dialog.telemetry_values()
+        usage_rating = dialog.telemetry_usefulness()
+        dialog.deleteLater()
         self.config["updates"] = dict(self.update_settings)
         loaded_art_count = self.timeline.set_instrument_art_dir(
             self.instrument_art_dir
@@ -7909,7 +7946,14 @@ class MidiToBdoWindow(
             **self._conversion_settings.to_payload(),
             "char_name": self.char_name,
         }
+        if usage_preferences is not None:
+            self.config["usage_telemetry"] = usage_preferences
+            if not usage_preferences["enabled"]:
+                self._configure_usage_reporting(usage_preferences)
         save_config(self.config)
+        if usage_preferences is not None and usage_preferences["enabled"]:
+            self._configure_usage_reporting(usage_preferences)
+        self._record_usage_helpfulness(usage_rating)
         active_localizer = localizer()
         if active_localizer is not None:
             active_localizer.set_language(self.language)
@@ -8087,31 +8131,23 @@ class MidiToBdoWindow(
     def _resolve_owner_id_for_export(self) -> bool:
         """Offer direct recovery for the most common export precondition."""
 
-        dialog = QMessageBox(self)
-        dialog.setIcon(QMessageBox.Warning)
-        dialog.setWindowTitle(tr("无法导出：缺少 Owner ID"))
-        dialog.setText(
+        choice = choose_prompt(
+            self,
+            tr("无法导出：缺少 Owner ID"),
             tr(
                 "BDO 曲谱必须包含有效 Owner ID。可以立即从游戏曲谱读取，"
                 "也可以打开设置手动处理。"
-            )
+            ),
+            (
+                ("later", tr("稍后处理")),
+                ("settings", tr("去设置")),
+                ("load", tr("从游戏曲谱读取")),
+            ),
+            default="load", cancel="later",
         )
-        load_button = dialog.addButton(
-            tr("从游戏曲谱读取"), QMessageBox.ButtonRole.AcceptRole
-        )
-        settings_button = dialog.addButton(
-            tr("去设置"), QMessageBox.ButtonRole.ActionRole
-        )
-        later_button = dialog.addButton(
-            tr("稍后处理"), QMessageBox.ButtonRole.RejectRole
-        )
-        dialog.setDefaultButton(load_button)
-        dialog.setEscapeButton(later_button)
-        dialog.exec()
-        clicked = dialog.clickedButton()
-        if clicked is load_button:
+        if choice == "load":
             self._quick_load_owner_id()
-        elif clicked is settings_button:
+        elif choice == "settings":
             self._open_settings(0)
         return bool(self.owner_id)
 
@@ -8136,6 +8172,7 @@ class MidiToBdoWindow(
             and verification.stage_matches("primary")
         )
         if verification_failed:
+            self._record_usage_issue("export_failed")
             issue_count = (
                 verification.issue_count
                 if isinstance(verification, ExportVerificationReport)
@@ -8153,6 +8190,7 @@ class MidiToBdoWindow(
             append_crash_log("Export consistency verification failed", diagnostic)
             self.status_label.setText(tr("转换完成（数据一致性检查失败）"))
         else:
+            self._record_usage_export()
             extra_parts.append(trv(" · 编辑器→BDO v9 数据一致"))
 
         if installed:
@@ -8197,6 +8235,7 @@ class MidiToBdoWindow(
         self._autosave_project("convert finished", immediate=True)
 
     def _on_convert_failed(self, message: str) -> None:
+        self._record_usage_issue("export_failed")
         self._sync_convert_button_enabled()
         self.status_label.setText(tr("转换失败"))
         safe_message = _redact_log_paths(message)
@@ -8259,22 +8298,14 @@ class MidiToBdoWindow(
             self._keep_open_after_autosave_failure()
             event.ignore()
             return
-        # Reference-tempo decoding is cancellable only between bounded decode
-        # stages.  Give that worker a short drain window before the generic
-        # asynchronous close path so a just-detached reference file cannot
-        # leave a native decoder thread alive while Qt tears down the window.
-        tempo_worker = self.reference_tempo_worker
-        if tempo_worker is not None and tempo_worker.isRunning():
-            self._pending_reference_tempo_path = ""
-            tempo_worker.cancel()
-            tempo_worker.wait(3_000)
+        self._pending_reference_tempo_path = ""
+        self._cancel_reference_tempo_worker()
         running_workers = [
             worker
             for worker in (
                 self.workspace_transcription_worker,
                 self.transcription_assist_worker,
                 self.reference_timbre_worker,
-                self.reference_tempo_worker,
                 self.sample_pack_worker,
                 self.worker,
             )
@@ -8302,6 +8333,7 @@ class MidiToBdoWindow(
         self.reference_audio.shutdown()
         self.realtime_audio.stop()
         self.self_update_controller.shutdown()
+        self._shutdown_usage_reporting()
         self.workspace_close_pending = False
         super().closeEvent(event)
 
@@ -8325,12 +8357,13 @@ def _report_fatal_error(
 
 def main() -> int:
     install_crash_logging()
+    from PySide6.QtCore import QThreadPool
     from bdo_music_composer.app.windows_recovery import (
         register_frozen_application_restart,
     )
+    from bdo_music_composer.ui.online_score_library_qt import initialize_online_score_library
 
     register_frozen_application_restart()
-    prune_transcription_workspaces()
     if sys.platform == "win32":
         try:
             import ctypes
@@ -8339,50 +8372,52 @@ def main() -> int:
             )
         except (AttributeError, OSError):
             pass
+    initialize_online_score_library()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_DISPLAY_VERSION)
     install_localizer(app, str(load_config().get("language", "auto")))
-    icon_path = ASSETS_DIR / "icons" / "app_icon.png"
+    icon_path = APP_ICON_IMAGE
     if icon_path.is_file():
         app.setWindowIcon(QIcon(str(icon_path)))
-    startup: _StartupReveal | None = None
+    ready = False
     try:
         window = MidiToBdoWindow()
-        startup = _StartupReveal(window)
-        startup.prepare_window()
-        startup.finished.connect(window._show_startup_notice)
-        window.show()
-        startup.show()
+        place_startup_window(window)
 
-        def fail_startup(exc: BaseException) -> None:
-            startup.abort()
-            _report_fatal_error(window, "Fatal error during startup", exc)
-            app.exit(1)
-
-        def discover_plugins() -> None:
+        def maintain_local_files() -> None:
             try:
+                prune_transcription_workspaces()
                 plugin_discovery = discover_host_algorithms()
                 if plugin_discovery.diagnostics:
                     append_crash_log(
                         "Optimizer bundle discovery",
                         "\n".join(plugin_discovery.diagnostics),
                     )
-                finish_startup()
+            except Exception:
+                append_crash_log("Startup maintenance", traceback.format_exc())
+
+        def report_ready() -> None:
+            nonlocal ready
+            try:
+                window.toolbar_home_btn.setFocus()
+                window._show_startup_notice()
+                window._schedule_usage_reporting()
+                QThreadPool.globalInstance().start(maintain_local_files)
+                ready = True
             except BaseException as exc:
-                fail_startup(exc)
+                mark_startup_usage_failure(CONFIG_PATH)
+                _report_fatal_error(window, "Fatal error during startup", exc)
+                app.exit(1)
 
-        def finish_startup() -> None:
-            startup.finish()
-
-        startup.set_status(tr("正在检查扩展组件…"))
-        QTimer.singleShot(0, discover_plugins)
+        FirstVisiblePaint(window, report_ready)
+        window.show()
         result = app.exec()
         append_crash_log("Application exited", f"exit_code={result}")
         return result
     except BaseException as exc:
-        if startup is not None:
-            startup.abort()
+        if not ready:
+            mark_startup_usage_failure(CONFIG_PATH)
         _report_fatal_error(None, "Fatal error in main()", exc)
         return 1
 

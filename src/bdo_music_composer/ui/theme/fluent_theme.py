@@ -7,12 +7,21 @@ therefore limited to BDO branding and the shared component hierarchy.
 
 from __future__ import annotations
 
-from enum import Enum
+from functools import lru_cache
+from string import Template
 
-from PySide6.QtCore import QPoint, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QAbstractButton, QApplication, QStyleFactory, QWidget
 
+from bdo_music_composer.core.project_paths import ASSETS_DIR
+from bdo_music_composer.ui.i18n import localizer
+
+from . import hig_tokens as hig
+from .button_style import BUTTON_QSS
+from .fonts_qt import apply_application_fonts
+from .interaction_style import INTERACTION_QSS, INTERACTION_THEME_MARKER
+from .symbols import FluentSymbol, draw_symbol
 
 WINDOWS_STYLE_PRIORITY = ("windows11", "windowsvista", "windows", "fusion")
 
@@ -21,16 +30,22 @@ WINDOWS_STYLE_PRIORITY = ("windows11", "windowsvista", "windows", "fusion")
 # Qt style: enabled menu text can be resolved from the native light-theme role
 # and become black on the fixed dark popup.  Keep every popup-menu state under
 # one application-level semantic contract.
-POPUP_MENU_BACKGROUND = "#1b1b1b"
-POPUP_MENU_BORDER = "#56504a"
-POPUP_MENU_TEXT = "#f3f1ea"
-POPUP_MENU_DISABLED_TEXT = "#9a948c"
-POPUP_MENU_SELECTED_BACKGROUND = "#5d451e"
-POPUP_MENU_SELECTED_TEXT = "#fff3d6"
-POPUP_MENU_SEPARATOR = "#3a3834"
-POPUP_MENU_INDICATOR_BACKGROUND = "#242427"
-POPUP_MENU_INDICATOR_CHECKED = "#f5a524"
+POPUP_MENU_BACKGROUND = hig.PANEL
+POPUP_MENU_BORDER = hig.CONTROL_BORDER
+POPUP_MENU_TEXT = hig.TEXT
+POPUP_MENU_DISABLED_TEXT = hig.DISABLED_TEXT
+POPUP_MENU_SELECTED_BACKGROUND = hig.SELECTION
+POPUP_MENU_SELECTED_TEXT = hig.SELECTION_TEXT
+POPUP_MENU_SEPARATOR = hig.SEPARATOR
+POPUP_MENU_INDICATOR_BACKGROUND = hig.CONTROL
+POPUP_MENU_INDICATOR_CHECKED = hig.SELECTION_INDICATOR
+_POPUP_ITEM_LABEL_PADDING = 28
+POPUP_MENU_LABEL_INSET = _POPUP_ITEM_LABEL_PADDING + hig.GROUP_CONTENT_MARGIN
 _POPUP_THEME_MARKER = "bdo-fixed-dark-popup-theme-v1"
+_INDICATOR_ASSETS = ASSETS_DIR / "icons" / "indicators"
+_CHECK_MARK = (_INDICATOR_ASSETS / "check.png").as_posix()
+_MIXED_MARK = (_INDICATOR_ASSETS / "mixed.png").as_posix()
+_RADIO_MARK = (_INDICATOR_ASSETS / "radio.png").as_posix()
 
 FIXED_DARK_POPUP_MENU_QSS = f"""
     /* {_POPUP_THEME_MARKER} */
@@ -38,15 +53,16 @@ FIXED_DARK_POPUP_MENU_QSS = f"""
         background-color: {POPUP_MENU_BACKGROUND};
         color: {POPUP_MENU_TEXT};
         border: 1px solid {POPUP_MENU_BORDER};
-        padding: 5px 0;
+        border-radius: {hig.GROUP_RADIUS}px;
+        padding: {hig.GROUP_CONTENT_MARGIN - 1}px 0;
     }}
     QMenu::item {{
         background-color: transparent;
         color: {POPUP_MENU_TEXT};
         min-height: 20px;
-        padding: 5px 30px 5px 28px;
-        margin: 1px 4px;
-        border-radius: 4px;
+        padding: 5px 30px 5px {_POPUP_ITEM_LABEL_PADDING}px;
+        margin: 1px {hig.GROUP_CONTENT_MARGIN}px;
+        border-radius: {hig.CONTROL_RADIUS}px;
     }}
     QMenu::item:selected {{
         background-color: {POPUP_MENU_SELECTED_BACKGROUND};
@@ -69,13 +85,27 @@ FIXED_DARK_POPUP_MENU_QSS = f"""
         width: 13px;
         height: 13px;
         left: 9px;
-        border: 1px solid {POPUP_MENU_BORDER};
-        border-radius: 2px;
+        border: 1px solid {hig.INDICATOR_BORDER};
+        border-radius: {hig.SMALL_CONTROL_RADIUS}px;
         background: {POPUP_MENU_INDICATOR_BACKGROUND};
     }}
     QMenu::indicator:checked {{
         border-color: {POPUP_MENU_INDICATOR_CHECKED};
         background: {POPUP_MENU_INDICATOR_CHECKED};
+        image: url("{_CHECK_MARK}");
+    }}
+    QMenu::indicator:exclusive {{
+        border-radius: 7px;
+    }}
+    QMenu::indicator:exclusive:checked {{
+        image: url("{_RADIO_MARK}");
+    }}
+    QMenu::indicator:disabled {{
+        border-color: {hig.CONTROL_BORDER};
+        background: {hig.PANEL};
+    }}
+    QMenu::indicator:checked:disabled {{
+        background: {hig.SELECTION_BORDER};
     }}
 """
 
@@ -97,7 +127,13 @@ def configure_widget_style(app: QApplication) -> str:
     else:
         selected = app.style().objectName()
     apply_fixed_dark_palette(app)
+    translator = localizer()
+    apply_application_fonts(app, translator.language if translator is not None else "en_US")
     install_fixed_dark_popup_theme(app)
+    if INTERACTION_THEME_MARKER not in app.styleSheet():
+        app.setStyleSheet(
+            app.styleSheet() + BUTTON_QSS + SHARED_CONTROL_QSS + INTERACTION_QSS
+        )
     return selected
 
 
@@ -106,20 +142,20 @@ def apply_fixed_dark_palette(app: QApplication) -> None:
 
     palette = QPalette()
     colors = {
-        QPalette.ColorRole.Window: "#151515",
-        QPalette.ColorRole.WindowText: "#f3f1ea",
-        QPalette.ColorRole.Base: "#1e1e1e",
-        QPalette.ColorRole.AlternateBase: "#262626",
-        QPalette.ColorRole.ToolTipBase: "#262626",
-        QPalette.ColorRole.ToolTipText: "#f3f1ea",
-        QPalette.ColorRole.Text: "#f3f1ea",
-        QPalette.ColorRole.Button: "#2b2b2b",
-        QPalette.ColorRole.ButtonText: "#f3f1ea",
+        QPalette.ColorRole.Window: hig.CANVAS,
+        QPalette.ColorRole.WindowText: hig.TEXT,
+        QPalette.ColorRole.Base: hig.PANEL,
+        QPalette.ColorRole.AlternateBase: hig.CONTROL,
+        QPalette.ColorRole.ToolTipBase: hig.CONTROL,
+        QPalette.ColorRole.ToolTipText: hig.TEXT,
+        QPalette.ColorRole.Text: hig.TEXT,
+        QPalette.ColorRole.Button: hig.CONTROL,
+        QPalette.ColorRole.ButtonText: hig.TEXT,
         QPalette.ColorRole.BrightText: "#ffffff",
-        QPalette.ColorRole.Highlight: "#b97b20",
-        QPalette.ColorRole.HighlightedText: "#ffffff",
-        QPalette.ColorRole.Link: "#f0c66f",
-        QPalette.ColorRole.PlaceholderText: "#8d8780",
+        QPalette.ColorRole.Highlight: hig.SELECTION,
+        QPalette.ColorRole.HighlightedText: hig.SELECTION_TEXT,
+        QPalette.ColorRole.Link: hig.ACCENT,
+        QPalette.ColorRole.PlaceholderText: hig.DISABLED_TEXT,
     }
     for group in (
         QPalette.ColorGroup.Active,
@@ -173,186 +209,77 @@ def system_uses_dark_theme(app: QApplication | None = None) -> bool:
     return app.palette().color(QPalette.ColorRole.Window).lightness() < 128
 
 
-class FluentSymbol(str, Enum):
-    HOME = "home"
-    OPEN = "open"
-    PROJECT = "project"
-    OPTIMIZE = "optimize"
-    NETWORK = "network"
-    INFO = "info"
-    SETTINGS = "settings"
-    EXPORT = "export"
-    FIT = "fit"
-    PLAY = "play"
-    PAUSE = "pause"
-    STOP = "stop"
-    ADD_TRACK = "add_track"
-    DELETE = "delete"
-    CURVE = "curve"
-    MARQUEE = "marquee"
-    SELECT = "select"
-    RAZOR = "razor"
-    MAGNET = "magnet"
-
-
-def _draw_fluent_symbol(symbol: FluentSymbol, color: str, size: int = 16) -> QPixmap:
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    scale = size / 16.0
-    pen = QPen(QColor(color), 1.5 * scale)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    def line(x1: float, y1: float, x2: float, y2: float) -> None:
-        painter.drawLine(round(x1 * scale), round(y1 * scale), round(x2 * scale), round(y2 * scale))
-
-    def rect(x: float, y: float, width: float, height: float) -> None:
-        painter.drawRoundedRect(
-            round(x * scale), round(y * scale), round(width * scale), round(height * scale),
-            1.2 * scale, 1.2 * scale,
-        )
-
-    if symbol == FluentSymbol.HOME:
-        painter.drawPolyline([
-            _point(2.5, 7.5, scale), _point(8, 2.8, scale), _point(13.5, 7.5, scale),
-        ])
-        painter.drawPolyline([
-            _point(4, 6.5, scale), _point(4, 13, scale), _point(12, 13, scale),
-            _point(12, 6.5, scale),
-        ])
-        line(7, 13, 7, 9.5)
-        line(7, 9.5, 9.5, 9.5)
-        line(9.5, 9.5, 9.5, 13)
-    elif symbol in {FluentSymbol.OPEN, FluentSymbol.PROJECT}:
-        painter.drawPolyline([
-            _point(2, 5, scale), _point(6, 5, scale), _point(7.5, 3.5, scale),
-            _point(13.5, 3.5, scale), _point(13.5, 12.5, scale), _point(2, 12.5, scale),
-            _point(2, 5, scale),
-        ])
-        if symbol == FluentSymbol.OPEN:
-            line(8, 7, 8, 11)
-            line(6, 9, 10, 9)
-    elif symbol == FluentSymbol.OPTIMIZE:
-        painter.drawArc(round(2 * scale), round(2 * scale), round(12 * scale), round(12 * scale), 35 * 16, 255 * 16)
-        line(11.5, 2.5, 14, 3)
-        line(14, 3, 13.2, 5.4)
-    elif symbol == FluentSymbol.NETWORK:
-        painter.drawEllipse(round(6 * scale), round(1.5 * scale), round(4 * scale), round(4 * scale))
-        painter.drawEllipse(round(1.5 * scale), round(10.5 * scale), round(4 * scale), round(4 * scale))
-        painter.drawEllipse(round(10.5 * scale), round(10.5 * scale), round(4 * scale), round(4 * scale))
-        line(7, 5.2, 4.5, 10.8)
-        line(9, 5.2, 11.5, 10.8)
-        line(5.5, 12.5, 10.5, 12.5)
-    elif symbol == FluentSymbol.INFO:
-        painter.drawEllipse(round(2.5 * scale), round(2.5 * scale), round(11 * scale), round(11 * scale))
-        line(8, 7, 8, 11)
-        painter.setBrush(QColor(color))
-        painter.drawEllipse(round(7.3 * scale), round(4.5 * scale), round(1.4 * scale), round(1.4 * scale))
-    elif symbol == FluentSymbol.SETTINGS:
-        for y, knob in ((4, 6), (8, 10), (12, 5)):
-            line(2.5, y, 13.5, y)
-            painter.setBrush(QColor(color))
-            painter.drawEllipse(round((knob - 1) * scale), round((y - 1) * scale), round(2 * scale), round(2 * scale))
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-    elif symbol == FluentSymbol.EXPORT:
-        rect(3, 2.5, 10, 11)
-        line(8, 4.5, 8, 10)
-        line(5.8, 7.8, 8, 10)
-        line(10.2, 7.8, 8, 10)
-    elif symbol == FluentSymbol.FIT:
-        line(2.5, 6, 2.5, 2.5)
-        line(2.5, 2.5, 6, 2.5)
-        line(10, 2.5, 13.5, 2.5)
-        line(13.5, 2.5, 13.5, 6)
-        line(2.5, 10, 2.5, 13.5)
-        line(2.5, 13.5, 6, 13.5)
-        line(10, 13.5, 13.5, 13.5)
-        line(13.5, 13.5, 13.5, 10)
-    elif symbol == FluentSymbol.PLAY:
-        painter.setBrush(QColor(color))
-        painter.drawPolygon([_point(5, 3.5, scale), _point(12.5, 8, scale), _point(5, 12.5, scale)])
-    elif symbol == FluentSymbol.PAUSE:
-        painter.setBrush(QColor(color))
-        painter.drawRoundedRect(round(4 * scale), round(3.5 * scale), round(2.5 * scale), round(9 * scale), scale, scale)
-        painter.drawRoundedRect(round(9.5 * scale), round(3.5 * scale), round(2.5 * scale), round(9 * scale), scale, scale)
-    elif symbol == FluentSymbol.STOP:
-        painter.setBrush(QColor(color))
-        painter.drawRoundedRect(round(4 * scale), round(4 * scale), round(8 * scale), round(8 * scale), scale, scale)
-    elif symbol == FluentSymbol.ADD_TRACK:
-        line(2.5, 4.5, 9, 4.5); line(2.5, 8, 8, 8); line(2.5, 11.5, 7, 11.5)
-        line(11.5, 8, 11.5, 13); line(9, 10.5, 14, 10.5)
-    elif symbol == FluentSymbol.DELETE:
-        rect(4, 4.5, 8, 9)
-        line(3, 4.5, 13, 4.5); line(6, 2.5, 10, 2.5)
-        line(6.5, 7, 6.5, 11); line(9.5, 7, 9.5, 11)
-    elif symbol == FluentSymbol.CURVE:
-        painter.drawPolyline([
-            _point(2.0, 11.5, scale),
-            _point(5.0, 8.5, scale),
-            _point(8.0, 9.5, scale),
-            _point(11.0, 4.5, scale),
-            _point(14.0, 6.0, scale),
-        ])
-        painter.setBrush(QColor(color))
-        for x, y in ((2.0, 11.5), (5.0, 8.5), (8.0, 9.5), (11.0, 4.5), (14.0, 6.0)):
-            painter.drawEllipse(
-                round((x - 0.9) * scale),
-                round((y - 0.9) * scale),
-                round(1.8 * scale),
-                round(1.8 * scale),
-            )
-    elif symbol == FluentSymbol.MARQUEE:
-        dash_pen = QPen(QColor(color), 1.4 * scale, Qt.PenStyle.DashLine)
-        dash_pen.setCapStyle(Qt.PenCapStyle.SquareCap)
-        painter.setPen(dash_pen)
-        painter.drawRect(
-            round(2.5 * scale), round(3.0 * scale),
-            round(11.0 * scale), round(9.5 * scale),
-        )
-    elif symbol == FluentSymbol.SELECT:
-        painter.drawPolygon([
-            _point(3.0, 2.5, scale),
-            _point(12.5, 8.0, scale),
-            _point(8.2, 9.0, scale),
-            _point(10.8, 13.0, scale),
-            _point(8.8, 14.0, scale),
-            _point(6.4, 9.8, scale),
-            _point(3.0, 12.5, scale),
-        ])
-    elif symbol == FluentSymbol.RAZOR:
-        painter.drawEllipse(round(2 * scale), round(2.5 * scale), round(4 * scale), round(4 * scale))
-        painter.drawEllipse(round(2 * scale), round(9.5 * scale), round(4 * scale), round(4 * scale))
-        line(5.5, 5.5, 13.5, 12.5)
-        line(5.5, 10.5, 13.5, 3.5)
-    elif symbol == FluentSymbol.MAGNET:
-        painter.drawArc(
-            round(3 * scale), round(2 * scale),
-            round(10 * scale), round(11 * scale), 0, 180 * 16,
-        )
-        line(3, 7, 3, 13)
-        line(13, 7, 13, 13)
-        line(2, 13, 5, 13)
-        line(11, 13, 14, 13)
-
-    painter.end()
-    return pixmap
-
-
-def _point(x: float, y: float, scale: float):
-    return QPoint(round(x * scale), round(y * scale))
-
-
-def set_fluent_symbol(button: QAbstractButton, symbol: FluentSymbol) -> None:
+def set_fluent_symbol(
+    button: QAbstractButton,
+    symbol: FluentSymbol,
+    *,
+    checked_symbol: FluentSymbol | None = None,
+) -> None:
     button.setProperty("fluentSymbol", symbol.value)
+    button.setProperty(
+        "fluentCheckedSymbol", checked_symbol.value if checked_symbol else None,
+    )
     button.setIconSize(fluent_icon_size())
-    color = "#d8d3cc" if system_uses_dark_theme() else "#4b4742"
+    _set_symbol_icon(button, symbol, system_uses_dark_theme())
+
+
+def _set_symbol_icon(
+    button: QAbstractButton, symbol: FluentSymbol, dark: bool, *,
+    focused: bool | None = None,
+) -> None:
+    color = hig.TEXT if dark else "#4b4742"
     if button.property("kind") == "convert":
-        color = "#1b1305"
-    button.setIcon(QIcon(_draw_fluent_symbol(symbol, color)))
+        color = hig.ACCENT_TEXT
+    elif button.property("kind") == "accent-outline":
+        color = hig.ACCENT
+    if focused is None:
+        focused = bool(button.property("fluentCaptionFocus")) and button.hasFocus()
+    if focused:
+        color = hig.FOCUS
+    checked_value = button.property("fluentCheckedSymbol")
+    checked_symbol = FluentSymbol(checked_value) if checked_value else None
+    button.setIcon(_symbol_icon(symbol, color, checked_symbol))
+
+
+@lru_cache(maxsize=96)
+def _symbol_icon(
+    symbol: FluentSymbol, color: str, checked_symbol: FluentSymbol | None,
+) -> QIcon:
+    """Share the fixed palette and size variants across editor controls."""
+    icon = QIcon()
+    for size in (16, 24, 32, 48):
+        icon.addPixmap(draw_symbol(symbol, color, size))
+        icon.addPixmap(draw_symbol(symbol, hig.DISABLED_TEXT, size), QIcon.Mode.Disabled)
+        if checked_symbol is not None:
+            icon.addPixmap(
+                draw_symbol(checked_symbol, color, size), QIcon.Mode.Normal, QIcon.State.On,
+            )
+            icon.addPixmap(
+                draw_symbol(checked_symbol, hig.DISABLED_TEXT, size), QIcon.Mode.Disabled, QIcon.State.On,
+            )
+    return icon
+
+
+class _CaptionIconFocus(QObject):
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        kind = event.type()
+        if kind in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+            value = watched.property("fluentSymbol")
+            if isinstance(watched, QAbstractButton) and value:
+                _set_symbol_icon(
+                    watched, FluentSymbol(value), system_uses_dark_theme(),
+                    focused=kind == QEvent.Type.FocusIn,
+                )
+        return False
+
+
+def enable_caption_focus_icons(caption: QWidget) -> None:
+    """Keep keyboard focus on the caption glyph while leaving the backing flat."""
+    focus = _CaptionIconFocus(caption)
+    for button in caption.findChildren(QAbstractButton):
+        if button.property("fluentSymbol") and button.objectName() != "EnsembleCapacityBadge":
+            button.setProperty("fluentCaptionFocus", True)
+            button.installEventFilter(focus)
 
 
 def refresh_fluent_icons(root: QWidget, dark: bool) -> None:
@@ -360,10 +287,7 @@ def refresh_fluent_icons(root: QWidget, dark: bool) -> None:
         value = button.property("fluentSymbol")
         if not value:
             continue
-        color = "#d8d3cc" if dark else "#4b4742"
-        if button.property("kind") == "convert":
-            color = "#1b1305"
-        button.setIcon(QIcon(_draw_fluent_symbol(FluentSymbol(value), color)))
+        _set_symbol_icon(button, FluentSymbol(value), dark)
 
 
 def fluent_icon_size() -> QSize:
@@ -400,62 +324,188 @@ LIGHT_COLOR_REPLACEMENTS = {
     "#d6b675": "#74500d", "#8f6b2e": "#d89a28",
     "#5d451e": "#ffe0a3", "#e4c17c": "#80550c", "#d9d3ca": "#3e3a35",
     "#fff3d6": "#3b2a12", "#8d8780": "#8a867f",
+    hig.CANVAS: "#f4f4f6", hig.PANEL: "#ffffff", hig.CONTROL: "#f4f4f6",
+    hig.CONTROL_HOVER: "#e3e3e8", hig.CONTROL_PRESSED: "#d9d9df",
+    hig.SEPARATOR: "#d6d6db", hig.CONTROL_BORDER: "#929298",
+    hig.INDICATOR_BORDER: "#737377",
+    hig.TEXT: "#202020", hig.SECONDARY_TEXT: "#4d4944", hig.DISABLED_TEXT: "#615b53",
+    hig.SELECTION: "#e7e7ea", hig.SELECTION_HOVER: "#dcdce0",
+    hig.SELECTION_BORDER: "#747478", hig.SELECTION_TEXT: "#252526",
+    hig.SELECTION_INDICATOR: "#4f4e4b",
+    hig.FOCUS: "#855606", hig.ERROR_TEXT: "#a62920",
 }
 
 
-FLUENT_COMPONENT_QSS = """
+# Ordinary controls share metrics and interaction states. Dense editor bars
+# keep their explicit sizes; they do not acquire a second set of colors.
+CONTROL_BACKGROUND = hig.CONTROL
+CONTROL_BORDER = hig.CONTROL_BORDER
+CONTROL_TEXT = hig.TEXT
+CONTROL_DISABLED_TEXT = hig.DISABLED_TEXT
+CONTROL_FOCUS = hig.FOCUS
+
+SHARED_CONTROL_QSS = f"""
+    QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit {{
+        background: {CONTROL_BACKGROUND};
+        border: 1px solid {CONTROL_BORDER};
+        border-radius: {hig.CONTROL_RADIUS}px;
+        color: {CONTROL_TEXT};
+        padding: 5px 8px;
+        selection-background-color: {hig.SELECTION};
+        selection-color: {hig.SELECTION_TEXT};
+    }}
+    QLineEdit, QComboBox, QAbstractSpinBox {{ min-height: 20px; }}
+    QAbstractSpinBox {{ max-height: 20px; }}
+    QLineEdit:read-only {{ background: {hig.PANEL}; }}
+    QLineEdit:hover, QComboBox:hover, QAbstractSpinBox:hover,
+    QPlainTextEdit:hover, QTextEdit:hover {{
+        border-color: {hig.SELECTION_BORDER};
+    }}
+    QComboBox:on {{
+        background: {hig.SELECTION};
+        border-color: {hig.SELECTION_BORDER};
+    }}
+    QLineEdit:focus, QComboBox:focus, QComboBox:on:focus,
+    QAbstractSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{
+        border-color: {CONTROL_FOCUS};
+    }}
+    QLineEdit:disabled, QComboBox:disabled, QAbstractSpinBox:disabled,
+    QPlainTextEdit:disabled, QTextEdit:disabled {{
+        color: {CONTROL_DISABLED_TEXT};
+        background: {hig.PANEL};
+        border-color: {hig.SEPARATOR};
+    }}
+    QAbstractSpinBox > QLineEdit, QComboBox > QLineEdit {{
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        min-height: 0;
+    }}
+    QComboBox QAbstractItemView {{
+        background: {hig.PANEL};
+        color: {CONTROL_TEXT};
+        border: 1px solid {CONTROL_BORDER};
+        border-radius: {hig.CONTROL_RADIUS}px;
+        selection-background-color: {hig.SELECTION};
+        selection-color: {hig.SELECTION_TEXT};
+        outline: 0;
+    }}
+    QCheckBox, QRadioButton {{ color: {hig.TEXT}; spacing: 7px; }}
+    QCheckBox:disabled, QRadioButton:disabled {{ color: {CONTROL_DISABLED_TEXT}; }}
+    QCheckBox::indicator {{
+        width: 15px;
+        height: 15px;
+        border-radius: {hig.SMALL_CONTROL_RADIUS}px;
+        border: 1px solid {hig.INDICATOR_BORDER};
+        background: {hig.CONTROL};
+    }}
+    QRadioButton::indicator {{
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        border: 1px solid {hig.INDICATOR_BORDER};
+        background: {hig.CONTROL};
+    }}
+    QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
+        background: {hig.CONTROL_HOVER};
+        border-color: {hig.SECONDARY_TEXT};
+    }}
+    QCheckBox::indicator:pressed, QRadioButton::indicator:pressed {{
+        background: {hig.CONTROL_PRESSED};
+    }}
+    QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
+        background: {hig.SELECTION_INDICATOR};
+        border-color: {hig.SELECTION_INDICATOR};
+    }}
+    QCheckBox::indicator:checked {{ image: url("{_CHECK_MARK}"); }}
+    QCheckBox::indicator:indeterminate {{ image: url("{_MIXED_MARK}"); }}
+    QRadioButton::indicator:checked {{ image: url("{_RADIO_MARK}"); }}
+    QCheckBox::indicator:checked:hover, QRadioButton::indicator:checked:hover {{
+        background: {hig.TEXT};
+    }}
+    QCheckBox::indicator:checked:pressed, QRadioButton::indicator:checked:pressed,
+    QCheckBox::indicator:indeterminate {{
+        background: {hig.SELECTION_BORDER};
+        border-color: {hig.SELECTION_INDICATOR};
+    }}
+    QCheckBox::indicator:focus, QRadioButton::indicator:focus {{
+        border-color: {hig.FOCUS};
+    }}
+    QCheckBox::indicator:checked:focus, QRadioButton::indicator:checked:focus {{
+        border-color: {CONTROL_BACKGROUND};
+    }}
+    QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
+        background: {hig.PANEL};
+        border-color: {hig.CONTROL_BORDER};
+    }}
+    QCheckBox::indicator:checked:disabled, QCheckBox::indicator:indeterminate:disabled,
+    QRadioButton::indicator:checked:disabled {{
+        background: {hig.SELECTION_BORDER};
+        border-color: {hig.CONTROL_BORDER};
+    }}
+"""
+
+
+FLUENT_COMPONENT_QSS = Template("""
     QFrame#CommandGroup, QFrame#TransportGroup {
         background: #1a1a1a;
         border: 1px solid #353332;
-        border-radius: 7px;
+        border-radius: ${GROUP_RADIUS}px;
     }
-    QFrame#InfoBar {
-        background: #201f1c;
-        border: 1px solid #3d3932;
-        border-left: 3px solid #f5a524;
-        border-radius: 6px;
+    QLabel[uiRole="dialogTitle"] {
+        color: #f3f1ea;
+        font-size: ${TYPE_DIALOG_HEADING}px;
+        font-weight: 700;
     }
-    QPushButton {
-        min-height: 26px;
-        border-radius: 5px;
+    QLabel[uiRole="dialogSubtitle"] {
+        color: #aaa39a;
+        font-size: ${TYPE_SECONDARY}px;
     }
-    QPushButton[kind="primary"] { font-weight: 700; }
-    QPushButton[kind="secondary"] { background: transparent; }
-    QPushButton[kind="secondary"]:hover { background: #343434; }
-    QPushButton[kind="convert"] { border-radius: 6px; }
-    QLineEdit, QComboBox, QTextEdit, QListWidget { border-radius: 5px; }
-    QLineEdit:focus, QComboBox:focus, QTextEdit:focus {
-        border-bottom: 2px solid #f5a524;
+    QFrame[uiRole="dialogHeader"] {
+        background: $PANEL;
+        border: 0;
+        border-bottom: 1px solid $SEPARATOR;
+        border-radius: 0;
     }
-    QFrame#SettingsSection, QFrame#OptimizerOptions,
-    QFrame#EditorToolbar, QFrame#EditorFooter, QFrame#NoteInspectorTop {
-        border-radius: 9px;
+    QFrame[uiRole="dialogFooter"] {
+        background: $PANEL;
+        border: 0;
+        border-top: 1px solid $SEPARATOR;
+        border-radius: 0;
+    }
+    QDialog[uiSurface="utility"], QFrame[uiRole="dialogBody"] {
+        background: $CANVAS; color: $TEXT;
     }
     QFrame#PerformanceStrip {
         background: #1d1d1f;
+        border: 0;
         border-top: 1px solid #3d3932;
+        border-radius: 0;
     }
     QLabel#PerformanceCaption {
         color: #f0c66f;
-        font-size: 12px;
+        font-size: ${TYPE_SECONDARY}px;
         font-weight: 700;
     }
     QLabel#PerformanceMetric, QLabel#EnsembleMetric,
     QLabel#ProjectMusicStatus {
         color: #d8d3cc;
-        font-size: 12px;
+        font-size: ${TYPE_SECONDARY}px;
     }
+    QLabel#PerformanceMetric { font-family: Consolas, monospace; }
+    QLabel#EnsembleMetric { font-weight: 800; }
     QLabel#ProjectMusicStatus { font-weight: 600; }
     QLabel#EditorClipBoundsMusical {
         color: #e4c17c;
-        font-size: 11px;
+        font-size: ${TYPE_CAPTION}px;
         font-weight: 600;
     }
-"""
+""").substitute(vars(hig))
 
 
 def build_fluent_stylesheet(base_stylesheet: str, dark: bool) -> str:
-    stylesheet = base_stylesheet + FLUENT_COMPONENT_QSS
+    stylesheet = SHARED_CONTROL_QSS + base_stylesheet + FLUENT_COMPONENT_QSS
     if dark:
         return stylesheet
     for dark_color, light_color in LIGHT_COLOR_REPLACEMENTS.items():

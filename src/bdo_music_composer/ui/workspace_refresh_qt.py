@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from PySide6.QtCore import QSignalBlocker
+
 from bdo_music_composer.app.workspace_refresh_controller import RefreshPlan
 from bdo_music_composer.ui.i18n import trf
 
@@ -23,6 +25,18 @@ class WorkspaceRefreshHost(Protocol):
     def _update_ensemble_metric(self) -> None: ...
     def _refresh_transcription_workspace(self) -> None: ...
     def _schedule_timeline_validation_refresh(self) -> None: ...
+
+
+def sync_timeline_viewport_controls(host: WorkspaceRefreshHost) -> None:
+    """Reflect visual navigation without reporting a project edit."""
+    timeline = host.timeline
+    if hasattr(host, "timeline_zoom"):
+        with QSignalBlocker(host.timeline_zoom):
+            host.timeline_zoom.setValue(round(timeline.zoom_factor * 100))
+    if hasattr(host, "timeline_pan"):
+        with QSignalBlocker(host.timeline_pan):
+            host.timeline_pan.setValue(timeline.pan_percent())
+            host.timeline_pan.setEnabled(timeline.zoom_factor > 1.0)
 
 
 def apply_workspace_refresh(host: WorkspaceRefreshHost, plan: RefreshPlan) -> None:
@@ -73,11 +87,7 @@ def apply_workspace_refresh(host: WorkspaceRefreshHost, plan: RefreshPlan) -> No
         host._sync_global_bpm_control()
         host._sync_toolbar_global_gain()
 
-    if hasattr(host, "timeline_pan"):
-        host.timeline_pan.blockSignals(True)
-        host.timeline_pan.setValue(host.timeline.pan_percent())
-        host.timeline_pan.setEnabled(host.timeline.zoom_factor > 1.0)
-        host.timeline_pan.blockSignals(False)
+    sync_timeline_viewport_controls(host)
 
     if plan.refresh_ensemble:
         host._update_ensemble_metric()
@@ -85,6 +95,8 @@ def apply_workspace_refresh(host: WorkspaceRefreshHost, plan: RefreshPlan) -> No
         host._refresh_transcription_workspace()
     if plan.refresh_validation:
         host._schedule_timeline_validation_refresh()
+    if hasattr(host, "workbench"):
+        host.workbench.refresh()
 
 
-__all__ = ["WorkspaceRefreshHost", "apply_workspace_refresh"]
+__all__ = ["WorkspaceRefreshHost", "apply_workspace_refresh", "sync_timeline_viewport_controls"]

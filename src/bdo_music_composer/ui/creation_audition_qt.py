@@ -14,6 +14,7 @@ from bdo_music_composer.ui.i18n import tr, trf
 
 
 class CreationAudition(QObject):
+    active_changed = Signal(bool)
     status_changed = Signal(str)
 
     def __init__(self, host, parent=None):
@@ -62,6 +63,7 @@ class CreationAudition(QObject):
                 audio.load_procedural_project_async(prepared, start_ms, self.host.reverb, self.host.delay, self.host.chorus)
             self.active = self.loading = True
             self.timer.start()
+            self.active_changed.emit(True)
             self.status_changed.emit(tr("正在准备试听…"))
         except (AudioEngineError, ValueError) as exc:
             self.stop()
@@ -86,7 +88,9 @@ class CreationAudition(QObject):
 
     def stop(self):
         self.timer.stop()
-        if self.active:
+        was_active = self.active
+        self.active = self.loading = False
+        if was_active:
             self.host.realtime_audio.cancel_loading()
             self.host.realtime_audio.clear_playback()
-        self.active = self.loading = False
+            self.active_changed.emit(False)

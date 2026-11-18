@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from functools import lru_cache
+import os
 from pathlib import Path
 from typing import Mapping
 
@@ -81,6 +82,14 @@ def _candidate_stems(instrument_id: int, visual_key: str) -> tuple[str, ...]:
     )))
 
 
+def _builtin_artwork_files() -> set[str]:
+    try:
+        with os.scandir(BUILTIN_INSTRUMENT_ART_DIR) as entries:
+            return {entry.name for entry in entries if entry.is_file()}
+    except OSError:
+        return set()
+
+
 class InstrumentLaneArtwork:
     """Preloaded local instrument art; safe to query from a paint event."""
 
@@ -124,7 +133,8 @@ class InstrumentLaneArtwork:
                 roots.append((custom_root, False))
             else:
                 warnings.append("instrument artwork directory is unavailable")
-        if BUILTIN_INSTRUMENT_ART_DIR.is_dir():
+        builtin_files = _builtin_artwork_files()
+        if builtin_files:
             roots.append((BUILTIN_INSTRUMENT_ART_DIR, True))
         elif not roots:
             warnings.append("built-in instrument artwork is unavailable")
@@ -136,8 +146,11 @@ class InstrumentLaneArtwork:
             for root, is_builtin in roots:
                 for stem in _candidate_stems(instrument_id, visual_key):
                     for extension in ARTWORK_FILE_EXTENSIONS:
-                        candidate = root / f"{stem}{extension}"
-                        if candidate.is_file():
+                        filename = f"{stem}{extension}"
+                        if is_builtin and filename not in builtin_files:
+                            continue
+                        candidate = root / filename
+                        if is_builtin or candidate.is_file():
                             selected = candidate
                             selected_is_builtin = is_builtin
                             break

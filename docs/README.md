@@ -11,7 +11,7 @@
 | 接手开发 | [接手手册](AGENT_HANDOFF.md) | [改动地图](AI_CONTEXT.md)、[编辑指南](AI_EDITING_GUIDE.md) |
 | 看懂程序 | [架构](ARCHITECTURE.md) | [目录与依赖](PROJECT_STRUCTURE.md) |
 | 修改格式或导出 | [BDO v9 编解码](BDO_V9_CODEC.md) | [转换设置](CONVERSION_SETTINGS.md)、[算法锁](NOTE_ARTICULATION_TRANSPOSE_ALGORITHM_LOCK.md) |
-| 修改界面 | [界面语言](CREATIVE_LANGUAGE_AND_UI_AUDIT.md) | [桌面端门禁](PROFESSIONAL_DESKTOP_PHASE6_10.md) |
+| 修改界面 | [界面规范](HUMAN_INTERFACE_GUIDELINES.md) | [界面语言](CREATIVE_LANGUAGE_AND_UI_AUDIT.md)、[桌面端门禁](PROFESSIONAL_DESKTOP_PHASE6_10.md) |
 | 打包发布 | [Windows 打包](WINDOWS_PACKAGING.md) | [本地化](LOCALIZATION.md)、[内容红线](CONTENT_BOUNDARY.md) |
 | 查性能 | [原生核心计划](PERFORMANCE_NATIVE_CORE_PLAN.md) | [实测记录](benchmarks/) |
 | 使用 SDK | [Developer SDK](DEVELOPER_SDK.md) | [优化器扩展](OPTIMIZATION_EXTENSION_ROADMAP.md) |

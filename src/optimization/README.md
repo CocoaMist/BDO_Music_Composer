@@ -22,9 +22,11 @@ models/          # optional
 README.md        # optional
 ```
 
-The schema-1 manifest declares `plugin_id`, `version`, `display_name`,
-`description`, `api_version`, `entrypoint`, all three intensities, supported
-scopes, capabilities, and `requires_safe_prepass`. The entrypoint uses
+The manifest sets `schema_version` and `api_version` to `1`. It declares
+`plugin_id`, `version`, `display_name`, `description`, `entrypoint`,
+`intensities`, `scopes`, `capabilities`, and `requires_safe_prepass`.
+The `intensities` array contains `conservative`, `balanced`, and `deep`.
+The entrypoint uses
 `module:function` syntax and returns an object implementing:
 
 ```python
@@ -49,17 +51,28 @@ Imported projects can already contain an out-of-map pitch, unsupported manual
 articulation, or pre-normalization drum encoding. API v1 treats those values as
 bounded source debt: an optimizer may preserve their pitch/type multiset while
 cleaning timing or velocity, but may not add another incompatible value. A
-track-instrument change and every derived track are validated strictly. The UI
-reports preserved source debt and sends it to Conversion Check instead of
-misreporting it as an optimizer-package failure.
+track-instrument change and every derived track are validated strictly.
+Remaining compatibility issues appear in the timeline validation marks and
+the checks that run before export.
 
 Packages are copied to `%LOCALAPPDATA%\BDO Music Composer\optimizer_plugins`.
 `BDO_OPTIMIZER_DIR` and `BDO_OPTIMIZER_CACHE` are available for development and
-tests. Discovery reads manifests only. Code is imported lazily from a SHA-256
-isolated cache when analysis begins. Packages are trusted local code; the host
-does not install dependencies or provide a sandbox. Non-trusted future
-extensions must use the bounded `ndjson-stdio` process contract instead of this
-in-process loader.
+tests. Discovery reads manifests only. Code is imported lazily into the same
+process from a SHA-256-keyed cache when analysis begins. Install bundles from
+sources you trust. The host provides no dependency installation or sandbox.
+`bdo_common.extension_protocol` currently defines the bounded `ndjson-stdio`
+framing. An isolated launcher for optimizer bundles is future work.
+
+### Optional Marnian Muse package
+
+Build the package in the independent Marnian Muse project with
+`marnian-build-bdoopt path\to\marnian-muse.bdoopt`. Copy the result to the
+folder opened by **Algorithm package directory** in the optimizer, refresh
+the list, and start analysis explicitly. Its manifest requests the built-in
+game-safe prepass and project-wide scope. The host validates the preview,
+then applies it only after confirmation. Remove the package and refresh the
+list to uninstall it. Keep the corpus, local paths and research outputs in
+the independent project.
 
 ## Compatibility registry
 

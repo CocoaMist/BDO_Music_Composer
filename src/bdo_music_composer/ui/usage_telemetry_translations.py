@@ -1,0 +1,82 @@
+"""Copy for the optional usage report and its preference page."""
+
+USAGE_TELEMETRY_TRANSLATIONS = {
+    "欢迎使用 BDO Music Composer": (
+        "Welcome to BDO Music Composer", "BDO Music Composer へようこそ", "BDO Music Composer에 오신 것을 환영합니다",
+    ),
+    "编排和试听多轨 MIDI，编辑音符与力度，导出黑色沙漠曲谱。": (
+        "Arrange and audition multitrack MIDI, edit notes and velocity, and export Black Desert scores.",
+        "マルチトラック MIDI を編曲・試聴し、音符とベロシティを編集して、黒い砂漠の楽譜を書き出せます。",
+        "멀티트랙 MIDI를 편곡하고 미리 들으며 음표와 벨로시티를 편집한 뒤 검은사막 악보로 내보낼 수 있습니다.",
+    ),
+    "匿名使用统计": ("Anonymous usage statistics", "匿名の利用統計", "익명 사용 통계"),
+    "你可以分享统计，帮助我们了解常用功能和需要修复的问题。": (
+        "You can share usage statistics to help us improve features and fix problems.",
+        "利用統計を共有すると、よく使われる機能や優先して改善すべき問題を把握できます。",
+        "사용 통계를 공유하면 자주 쓰는 기능과 먼저 해결할 문제를 파악하는 데 도움이 됩니다.",
+    ),
+    "统计系统版本、CPU 线程与内存档位、功能与导出次数、错误类别。": (
+        "Reports include the OS version, CPU thread and memory ranges, feature and export counts, and predefined error categories.",
+        "OS バージョン、CPU スレッド数とメモリの範囲、機能の利用・書き出し回数、定義済みのエラー分類を共有します。",
+        "운영 체제 버전, CPU 스레드 수와 메모리 구간, 기능 사용 및 내보내기 횟수, 미리 정의된 오류 분류를 공유합니다.",
+    ),
+    "随机安装编号用于合并同一安装的统计。": (
+        "A random installation ID groups reports from the same installation.",
+        "ランダムなインストール ID で、同じインストールからの統計をまとめます。",
+        "무작위 설치 ID로 동일한 설치에서 보낸 통계를 묶습니다.",
+    ),
+    "无法保存隐私设置，请在设置中重试。": (
+        "Could not save your privacy choice. Please try again in Settings.",
+        "プライバシー設定を保存できませんでした。設定からもう一度お試しください。",
+        "개인정보 보호 설정을 저장하지 못했습니다. 설정에서 다시 시도하세요.",
+    ),
+    "统计内容不包含曲谱、音符、文件名、路径、Owner ID 或 IP 地址。": (
+        "Reports exclude scores, notes, filenames, paths, Owner IDs, and IP addresses.",
+        "統計に楽譜、音符、ファイル名、パス、Owner ID、IP アドレスは含まれません。",
+        "통계에는 악보, 음표, 파일 이름, 경로, Owner ID, IP 주소가 포함되지 않습니다.",
+    ),
+    "可随时在「设置 → 隐私」更改分享选择。": (
+        "You can change your sharing choice in Settings → Privacy.",
+        "共有の設定は「設定 → プライバシー」でいつでも変更できます。",
+        "설정 → 개인정보 보호에서 공유 여부를 변경할 수 있습니다.",
+    ),
+    "使用感受仅在自愿填写后随统计分享。": (
+        "Your usefulness rating is shared only if you choose to provide it.",
+        "使い勝手の評価は、任意で入力した場合にのみ共有されます。",
+        "유용성 평가는 직접 입력한 경우에만 공유됩니다.",
+    ),
+    "继续使用，无需分享": ("Continue without sharing", "共有せずに続ける", "공유하지 않고 계속"),
+    "同意分享并继续": ("Share and continue", "共有に同意して続ける", "공유하고 계속"),
+    "隐私": ("Privacy", "プライバシー", "개인정보 보호"),
+    "分享使用统计": ("Share usage statistics", "利用統計を共有", "사용 통계 공유"),
+    "允许分享": ("Sharing enabled", "共有する", "공유함"),
+    "不分享": ("Sharing disabled", "共有しない", "공유하지 않음"),
+    "尚未选择": ("No decision yet", "未決定", "아직 선택하지 않음"),
+    "系统时区": ("System time zone", "システムのタイムゾーン", "시스템 시간대"),
+    "自动读取系统设置，仅在本机显示。": (
+        "Automatically detected from system settings and displayed on this device only.",
+        "システム設定から自動で取得し、この端末にのみ表示されます。",
+        "시스템 설정에서 자동으로 감지하며 이 기기에만 표시됩니다.",
+    ),
+    "不填写": ("Leave blank", "回答しない", "답변하지 않음"),
+    "中国大陆": ("Mainland China", "中国本土", "중국 본토"),
+    "北美": ("North America", "北米", "북미"),
+    "欧洲": ("Europe", "ヨーロッパ", "유럽"),
+    "东南亚": ("Southeast Asia", "東南アジア", "동남아시아"),
+    "台湾": ("Taiwan", "台湾", "대만"),
+    "日本": ("Japan", "日本", "일본"),
+    "韩国": ("Korea", "韓国", "한국"),
+    "南美": ("South America", "南米", "남미"),
+    "俄罗斯": ("Russia", "ロシア", "러시아"),
+    "土耳其": ("Türkiye", "トルコ", "튀르키예"),
+    "主机版": ("Console", "コンソール版", "콘솔"),
+    "其他地区": ("Other region", "その他の地域", "기타 지역"),
+    "是否帮助你编曲或作曲？（可选）": (
+        "Helpful for arranging or composing? (Optional)",
+        "編曲や作曲に役立ちましたか？（任意）",
+        "편곡이나 작곡에 도움이 되었나요? (선택 사항)",
+    ),
+    "觉得有帮助": ("Helpful", "役に立った", "도움 됨"),
+    "一般": ("Neither helpful nor unhelpful", "普通", "보통"),
+    "没有帮助": ("Not helpful", "役に立たなかった", "도움 안 됨"),
+}

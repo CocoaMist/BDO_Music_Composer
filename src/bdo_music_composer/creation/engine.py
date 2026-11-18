@@ -14,7 +14,7 @@ from itertools import product
 from bdo_midi import _GM_TO_BDO_DRUM
 from optimization.plugin_api import (
     CreateTrack, NoteSnapshot, OptimizationPreview, OptimizationRequest,
-    ReplaceNote, SetTrackInstrument, validate_preview,
+    ReplaceNote, SetTrackInstrument, TrackSnapshot, validate_preview,
 )
 from .brief import (
     CreationAction, CreationBrief, CreationCandidate, CreationFinding,
@@ -185,11 +185,56 @@ def _generate_parts(request, brief, degrees):
     return notes_by_role
 
 
+def _phrase_octave_shifts(track: TrackSnapshot, supported: frozenset[int], beat_ms: float) -> dict[int, int]:
+    """Find one legal octave shift for each clearly separated melodic phrase."""
+    if track.articulation_type not in (None, 0) or all(note.pitch in supported for note in track.notes):
+        return {}
+
+    shifts: dict[int, int] = {}
+    phrase: list[tuple[int, NoteSnapshot]] = []
+    phrase_end = float("-inf")
+    monophonic = True
+
+    def add_phrase() -> None:
+        if len(phrase) < 2 or not monophonic or any(note.ntype != 0 for _, note in phrase):
+            return
+        pitches = {note.pitch for _, note in phrase}
+        if pitches <= supported:
+            return
+        reference = min(pitches)
+        offsets = sorted(
+            (pitch - reference for pitch in supported if (pitch - reference) % 12 == 0),
+            key=lambda offset: (abs(offset), offset),
+        )
+        for offset in offsets:
+            if all(pitch + offset in supported for pitch in pitches):
+                shifts.update((index, offset) for index, _ in phrase)
+                return
+
+    for index, note in sorted(enumerate(track.notes), key=lambda item: item[1].start):
+        # A full beat of rest is a conservative boundary. Keep each sounding
+        # phrase together so octave folding does not reverse its intervals.
+        if note.start - phrase_end >= beat_ms:
+            add_phrase()
+            phrase = []
+            monophonic = True
+        elif note.start < phrase_end - 1e-6:
+            monophonic = False
+        phrase.append((index, note))
+        phrase_end = max(phrase_end, note.start + note.dur)
+    add_phrase()
+    return shifts
+
+
 def _adapt(request, brief, track):
     instrument = brief.melody_instrument
     if track.is_percussion != (instrument == request.drum_instrument_id):
         raise ValueError("melodic and percussion tracks cannot exchange roles")
     supported = request.supported_pitches.get(instrument)
+    phrase_shifts = (
+        _phrase_octave_shifts(track, supported, 60_000.0 / request.bpm)
+        if supported and not track.is_percussion else {}
+    )
     ntypes = {0, *(n for n, _ in request.supported_articulations.get(instrument, ()))}
     ops, counts = [], defaultdict(int)
     if instrument != track.instrument_id:
@@ -205,7 +250,9 @@ def _adapt(request, brief, track):
                 raise ValueError("choose GM encoding explicitly for noncanonical drum input")
             ntype = 99
         else:
-            if supported and pitch not in supported:
+            if index in phrase_shifts:
+                pitch += phrase_shifts[index]
+            elif supported and pitch not in supported:
                 pitch = _pitch(request, instrument, pitch % 12, pitch)
             # A catalog mismatch in an imported score is not evidence that
             # the player's manual articulation is wrong. Only choosing a
@@ -232,24 +279,29 @@ def _express(request, brief, track):
     groups = defaultdict(list)
     for i, note in selected:
         groups[int((note.start - start) // (beat * request.time_sig))].append((i, note))
-    onsets = sorted({n.start for _, n in selected})
+    onsets = sorted({n.start for _, n in selected}) if brief.shape_durations else []
     ops, expressive_bars = [], 0
+    scale_percent = brief.velocity_scale_percent
     base = {MusicalCharacter.LYRICAL: 67, MusicalCharacter.LIGHT: 77, MusicalCharacter.DRIVING: 88}[brief.character]
     gate = {MusicalCharacter.LYRICAL: .94, MusicalCharacter.LIGHT: .70, MusicalCharacter.DRIVING: .82}[brief.character]
     for bar, group in sorted(groups.items()):
-        flat = max(n.vel for _, n in group) - min(n.vel for _, n in group) <= 6
-        rewrite = brief.rewrite_velocity or flat
-        expressive_bars += int(not rewrite)
+        rewrite = scale_percent is None and (
+            brief.rewrite_velocity or max(n.vel for _, n in group) - min(n.vel for _, n in group) <= 6
+        )
+        expressive_bars += int(scale_percent is None and not rewrite)
         for index, note in group:
             # Manual note and track articulations encode user intent. The
             # default rule never changes their velocity, length or ntype.
             if note.ntype not in (0, 99) or (track.articulation_type not in (None, 0)):
                 continue
-            position = (note.start - start) / beat
-            bar_phase = position % request.time_sig
-            accent = 8 if bar_phase < .08 else (2 if abs(bar_phase - round(bar_phase)) < .08 else -5)
-            phrase = (0, 4, 8, -5)[bar % 4]
-            vel = max(1, min(127, base + accent + phrase)) if rewrite else note.vel
+            vel = note.vel
+            if rewrite:
+                bar_phase = ((note.start - start) / beat) % request.time_sig
+                accent = 8 if bar_phase < .08 else (2 if abs(bar_phase - round(bar_phase)) < .08 else -5)
+                phrase = (0, 4, 8, -5)[bar % 4]
+                vel = max(1, min(127, base + accent + phrase))
+            elif scale_percent is not None:
+                vel = max(1, min(127, (note.vel * scale_percent + 50) // 100))
             dur = note.dur
             if brief.shape_durations:
                 next_index = bisect_right(onsets, note.start + 1e-6)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QActionGroup, QColor
 from PySide6.QtWidgets import QMenu
 
 from bdo_music_composer.ui.i18n import tr
@@ -49,27 +49,27 @@ def add_instrument_submenus(
     current_id: int,
     instrument_names: dict[int, str],
 ) -> None:
-    used_ids: set[int] = set()
+    categorized_ids = {
+        instrument_id
+        for _, instrument_ids in BDO_INSTRUMENT_MENU_GROUPS
+        for instrument_id in instrument_ids
+    }
+    other_ids = tuple(value for value in instrument_names if value not in categorized_ids)
+    choices = QActionGroup(menu)
     submenus: list[QMenu] = []
-    for type_name, instrument_ids in BDO_INSTRUMENT_MENU_GROUPS:
+    for type_name, instrument_ids in (*BDO_INSTRUMENT_MENU_GROUPS, ("其他", other_ids)):
+        available_ids = tuple(value for value in instrument_ids if instrument_names.get(value))
+        if not available_ids:
+            continue
         type_menu = menu.addMenu(tr(type_name))
         submenus.append(type_menu)
-        for instrument_id in instrument_ids:
-            name = instrument_names.get(instrument_id)
-            if not name:
-                continue
-            used_ids.add(instrument_id)
-            action = type_menu.addAction(name)
+        if current_id in available_ids:
+            type_menu.menuAction().setCheckable(True)
+            type_menu.menuAction().setChecked(True)
+        for instrument_id in available_ids:
+            action = type_menu.addAction(instrument_names[instrument_id])
             action.setCheckable(True)
-            action.setChecked(instrument_id == current_id)
-            action.setData(instrument_id)
-    remaining = [value for value in instrument_names if value not in used_ids]
-    if remaining:
-        other_menu = menu.addMenu(tr("其他"))
-        submenus.append(other_menu)
-        for instrument_id in remaining:
-            action = other_menu.addAction(instrument_names[instrument_id])
-            action.setCheckable(True)
+            choices.addAction(action)
             action.setChecked(instrument_id == current_id)
             action.setData(instrument_id)
     # Preserve PySide wrappers for menus created in this helper. The C++ menu

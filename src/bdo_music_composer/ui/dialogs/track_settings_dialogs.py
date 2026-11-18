@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from PySide6.QtCore import Qt
+from bdo_music_composer.ui.floating_panel_qt import FloatingPanelDialog
+
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -40,6 +42,8 @@ from bdo_common.bdo_track_effects import (
     raw_track_settings,
 )
 from bdo_music_composer.ui.i18n import tr, trf
+from bdo_music_composer.ui.theme import hig_tokens as hig
+from bdo_music_composer.ui.ui_controls import ElidedComboBox, ElidedLabel
 from bdo_music_composer.editor.pitch_transform import PitchTransformPlan
 from bdo_music_composer.ui.dialogs.effect_controls_qt import (
     EffectControlCard,
@@ -73,6 +77,19 @@ def _instrument_name(instrument_id: int) -> str:
     return localized_bdo_instrument_name(int(instrument_id), tr)
 
 
+def _track_title(text: str) -> QFrame:
+    card = QFrame()
+    card.setObjectName("TrackTitleCard")
+    layout = QHBoxLayout(card)
+    layout.setContentsMargins(10, 8, 10, 8)
+    title = ElidedLabel(text, maximum_hint_width=380)
+    title.setObjectName("TrackTitle")
+    title.setTextFormat(Qt.PlainText)
+    title.setProperty("i18nSkip", True)
+    layout.addWidget(title)
+    return card
+
+
 class TrackPitchDialog(QDialog):
     """Explicit chromatic per-track transpose over the global transpose."""
 
@@ -95,10 +112,7 @@ class TrackPitchDialog(QDialog):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(12)
 
-        title = QLabel(track.display_name)
-        title.setProperty("i18nSkip", True)
-        title.setObjectName("TrackTitle")
-        layout.addWidget(title)
+        layout.addWidget(_track_title(track.display_name))
 
         hint = QLabel(
             tr(
@@ -146,6 +160,7 @@ class TrackPitchDialog(QDialog):
         self._refresh_effective_label()
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setProperty("kind", "convert")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -185,13 +200,11 @@ class ClipVelocityBaseDialog(QDialog):
         safe_name = str(display_name).strip()
         if safe_name.startswith(("track-", "clip-", "track:", "clip:")):
             safe_name = tr("所选片段")
-        title = QLabel(
+        title = _track_title(
             safe_name
             if int(count) == 1
             else trf("已选择 {count} 个Clip", count=int(count))
         )
-        title.setProperty("i18nSkip", True)
-        title.setObjectName("TrackTitle")
         layout.addWidget(title)
 
         hint = QLabel(
@@ -205,21 +218,32 @@ class ClipVelocityBaseDialog(QDialog):
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
+        form.setVerticalSpacing(hig.CONTROL_GAP)
         self.velocity_base = QSpinBox()
         self.velocity_base.setObjectName("ClipVelocityBase")
+        self.velocity_base.setMinimumHeight(hig.BUTTON_HEIGHT)
         self.velocity_base.setRange(-127, 127)
         self.velocity_base.setValue(0)
         form.addRow(tr("力度基数"), self.velocity_base)
 
         self.equalize = QCheckBox(tr("均化到 0–127"))
         self.equalize.setObjectName("TrackVelocityEqualize")
+        self.equalize.setMinimumHeight(hig.SEGMENT_HEIGHT)
         form.addRow("", self.equalize)
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setProperty("kind", "convert")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+        self.retranslate_dynamic_content()
+
+    def retranslate_dynamic_content(self) -> None:
+        # Fit the wrapped help at the dialog's narrowest supported width.
+        layout = self.layout()
+        self.setMinimumHeight(max(0, layout.totalHeightForWidth(self.minimumWidth())))
 
     def selected_velocity_base(self) -> int:
         return int(self.velocity_base.value())
@@ -232,20 +256,16 @@ class TrackFxDialog(QDialog):
     def __init__(self, parent: QWidget, track: TrackDialogState) -> None:
         super().__init__(parent)
         self.setObjectName("TrackFxDialog")
+        self.setProperty("uiSurface", "workflow")
         self.setWindowTitle(tr("轨道 FX"))
         self.setModal(True)
-        self.setFont(parent.font())
         self.resize(650, 440)
         self.setMinimumSize(570, 430)
         self.track = track
-        try:
-            self._original_track_settings = raw_track_settings(
-                track.bdo_track_settings
-            )
-        except ValueError:
-            self._original_track_settings = (0,) * 8
+        self.instrument_id = int(track.bdo_instrument_id)
         self._effect_dirty: set[int] = set()
         self._effect_fields: dict[int, QSpinBox] = {}
+        self._effect_cards: dict[int, tuple[EffectControlCard, str]] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -255,15 +275,17 @@ class TrackFxDialog(QDialog):
         header.setObjectName("EffectDialogHeader")
         header.setProperty("uiRole", "dialogHeader")
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(22, 17, 22, 15)
-        header_layout.setSpacing(3)
+        header_layout.setContentsMargins(24, 14, 24, 13)
+        header_layout.setSpacing(2)
         heading = QLabel(tr("轨道 FX"))
         heading.setObjectName("EffectDialogTitle")
-        title = QLabel(_instrument_name(track.bdo_instrument_id))
-        title.setObjectName("EffectDialogSubtitle")
-        title.setProperty("i18nSkip", True)
+        heading.setProperty("uiRole", "dialogTitle")
+        self.instrument_title = QLabel(_instrument_name(track.bdo_instrument_id))
+        self.instrument_title.setObjectName("EffectDialogSubtitle")
+        self.instrument_title.setProperty("uiRole", "dialogSubtitle")
+        self.instrument_title.setProperty("i18nSkip", True)
         header_layout.addWidget(heading)
-        header_layout.addWidget(title)
+        header_layout.addWidget(self.instrument_title)
         layout.addWidget(header)
 
         body = QFrame()
@@ -272,9 +294,7 @@ class TrackFxDialog(QDialog):
         body_layout.setContentsMargins(18, 16, 18, 14)
         body_layout.setSpacing(12)
 
-        effects_supported = instrument_supports_composer_effects(
-            track.bdo_instrument_id
-        )
+        effects_supported = instrument_supports_composer_effects(self.instrument_id)
         self._effects_supported = effects_supported
         if not effects_supported:
             capability_hint = QLabel(
@@ -289,7 +309,7 @@ class TrackFxDialog(QDialog):
         rack = QFrame()
         rack.setObjectName("EffectRack")
         rack_layout = QHBoxLayout(rack)
-        rack_layout.setContentsMargins(8, 8, 8, 8)
+        rack_layout.setContentsMargins(*(hig.EFFECT_RACK_CONTENT_MARGIN,) * 4)
         rack_layout.setSpacing(8)
 
         for label, index, object_name, help_text in (
@@ -315,36 +335,27 @@ class TrackFxDialog(QDialog):
             field = QSpinBox()
             field.setObjectName(object_name)
             field.setRange(0, GAME_PERCENT_MAX)
-            raw_value = int(self._original_track_settings[index])
-            field.setValue(max(0, min(GAME_PERCENT_MAX, raw_value)))
             field.setEnabled(effects_supported)
-            tooltip = tr(help_text)
-            if raw_value > GAME_PERCENT_MAX:
-                tooltip += "\n" + trf(
-                    "导入原值 {value}；修改后按 0–100 写入。",
-                    value=raw_value,
-                )
-            field.setToolTip(tooltip)
             field.valueChanged.connect(
                 lambda _value, effect_index=index: self._effect_dirty.add(
                     effect_index
                 )
             )
             self._effect_fields[index] = field
-            rack_layout.addWidget(EffectControlCard(tr(label), field))
+            card = EffectControlCard(tr(label), field)
+            self._effect_cards[index] = card, help_text
+            rack_layout.addWidget(card)
 
         body_layout.addWidget(rack)
 
-        is_marnian = track.bdo_instrument_id in MARNIAN_SYNTH_INSTRUMENT_IDS
+        is_marnian = self.instrument_id in MARNIAN_SYNTH_INSTRUMENT_IDS
         self.marnian_mode: QComboBox | None = None
         if is_marnian:
             self.resize(840, 440)
             self.setMinimumWidth(760)
-            self.marnian_mode = QComboBox()
+            self.marnian_mode = ElidedComboBox()
             for label, value in MARNIAN_SYNTH_MODES:
                 self.marnian_mode.addItem(tr(label), value)
-            mode_index = self.marnian_mode.findData(track.marnian_synth_mode)
-            self.marnian_mode.setCurrentIndex(mode_index if mode_index >= 0 else 0)
             rack_layout.addWidget(
                 EffectModeCard(
                     tr("玛勒尼斯音源"),
@@ -354,6 +365,7 @@ class TrackFxDialog(QDialog):
             )
         preview_hint = QLabel(tr("游戏参数 · 本地 FX 试听为未校准近似"))
         preview_hint.setObjectName("EffectPreviewNote")
+        preview_hint.setWordWrap(True)
         body_layout.addWidget(preview_hint)
         layout.addWidget(body, stretch=1)
 
@@ -362,20 +374,61 @@ class TrackFxDialog(QDialog):
         footer.setProperty("uiRole", "dialogFooter")
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(18, 10, 18, 10)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
         buttons.setProperty("uiRole", "dialogButtonRow")
-        buttons.button(QDialogButtonBox.Ok).setText(tr("应用"))
-        buttons.button(QDialogButtonBox.Ok).setProperty("kind", "convert")
-        buttons.button(QDialogButtonBox.Cancel).setText(tr("取消"))
-        buttons.accepted.connect(self.accept)
+        apply_button = buttons.button(QDialogButtonBox.Apply)
+        apply_button.setText(tr("应用"))
+        apply_button.setProperty("kind", "convert")
+        cancel_button = buttons.button(QDialogButtonBox.Cancel)
+        cancel_button.setText(tr("取消"))
+        cancel_button.setAutoDefault(False)
+        apply_button.clicked.connect(self.accept)
         buttons.rejected.connect(self.reject)
         footer_layout.addWidget(buttons)
         layout.addWidget(footer)
+        apply_button.setDefault(True)
+        self.refresh_track_settings()
+
+    def refresh_track_settings(
+        self, *, keep_send_edits: bool = False, keep_mode_edit: bool = False,
+    ) -> None:
+        """Read the current track while optionally keeping the inspector's draft."""
+
+        try:
+            self._original_track_settings = raw_track_settings(self.track.bdo_track_settings)
+        except ValueError:
+            self._original_track_settings = (0,) * 8
+        if not keep_send_edits:
+            self._effect_dirty.clear()
+        for index, (card, help_text) in self._effect_cards.items():
+            field = card.field
+            raw_value = self._original_track_settings[index]
+            shown_value = min(GAME_PERCENT_MAX, raw_value)
+            if index not in self._effect_dirty and field.value() != shown_value:
+                with QSignalBlocker(field), QSignalBlocker(card.dial):
+                    field.setValue(shown_value)
+                    card.dial.setValue(shown_value)
+            tooltip = tr(help_text)
+            if raw_value > GAME_PERCENT_MAX:
+                tooltip += "\n" + trf(
+                    "导入原值 {value}；修改后按 0–100 写入。",
+                    value=raw_value,
+                )
+            if field.toolTip() != tooltip:
+                field.setToolTip(tooltip)
+                card.dial.setToolTip(tooltip)
+        if self.marnian_mode is not None and not keep_mode_edit:
+            mode_index = max(0, self.marnian_mode.findData(self.track.marnian_synth_mode))
+            if self.marnian_mode.currentIndex() != mode_index:
+                self.marnian_mode.setCurrentIndex(mode_index)
 
     def selected_marnian_synth_mode(self) -> str:
         if self.marnian_mode is None:
             return "basic"
         return str(self.marnian_mode.currentData() or "basic")
+
+    def retranslate_dynamic_content(self) -> None:
+        self.instrument_title.setText(_instrument_name(self.track.bdo_instrument_id))
 
     def selected_track_settings(self) -> tuple[int, ...]:
         """Return edited Aux sends while preserving untouched wire bytes."""
@@ -397,7 +450,7 @@ class TrackFxDialog(QDialog):
         return frozenset(self._effect_dirty)
 
 
-class MasterEffectsDialog(QDialog):
+class MasterEffectsDialog(FloatingPanelDialog):
     """Edit score-wide effect parameters without touching track Aux sends."""
 
     def __init__(
@@ -407,11 +460,11 @@ class MasterEffectsDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("MasterEffectsDialog")
+        self.setProperty("uiSurface", "workflow")
         self.setWindowTitle(tr("全局主效果"))
         self.setModal(True)
-        self.setFont(parent.font())
-        self.resize(900, 580)
-        self.setMinimumSize(840, 570)
+        self.resize(900, 520)
+        self.setMinimumSize(840, 510)
 
         self._original = current or MasterEffects()
         self._dirty_fields: set[str] = set()
@@ -425,16 +478,18 @@ class MasterEffectsDialog(QDialog):
         header.setObjectName("EffectDialogHeader")
         header.setProperty("uiRole", "dialogHeader")
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(22, 18, 22, 16)
-        header_layout.setSpacing(4)
+        header_layout.setContentsMargins(24, 14, 24, 13)
+        header_layout.setSpacing(2)
         title = QLabel(tr("全局主效果"))
         title.setObjectName("EffectDialogTitle")
+        title.setProperty("uiRole", "dialogTitle")
         subtitle = QLabel(
             tr(
                 "整首曲子共用这些参数；轨道使用多少效果仍由每条轨道的 FX 发送量决定。"
             )
         )
         subtitle.setObjectName("EffectDialogSubtitle")
+        subtitle.setProperty("uiRole", "dialogSubtitle")
         subtitle.setWordWrap(True)
         header_layout.addWidget(title)
         header_layout.addWidget(subtitle)
@@ -446,28 +501,6 @@ class MasterEffectsDialog(QDialog):
         body_layout.setContentsMargins(22, 20, 22, 22)
         body_layout.setSpacing(14)
 
-        scope = QFrame()
-        scope.setObjectName("EffectScopeNotice")
-        scope_layout = QVBoxLayout(scope)
-        scope_layout.setContentsMargins(14, 11, 14, 11)
-        scope_layout.setSpacing(4)
-        scope_title = QLabel(tr("作用范围"))
-        scope_title.setObjectName("EffectScopeTitle")
-        scope_detail = QLabel(
-            tr("这里仅修改全局参数，不会改动任何轨道的混响、延迟或合唱发送量。")
-        )
-        scope_detail.setObjectName("Muted")
-        scope_detail.setWordWrap(True)
-        preview_note = QLabel(
-            tr("游戏参数 · 本地 FX 试听为未校准近似")
-        )
-        preview_note.setObjectName("EffectPreviewNote")
-        preview_note.setWordWrap(True)
-        scope_layout.addWidget(scope_title)
-        scope_layout.addWidget(scope_detail)
-        scope_layout.addWidget(preview_note)
-        body_layout.addWidget(scope)
-
         rack_row = QHBoxLayout()
         rack_row.setContentsMargins(0, 0, 0, 0)
         rack_row.setSpacing(12)
@@ -477,7 +510,7 @@ class MasterEffectsDialog(QDialog):
             "混响时间控制空间尾音；延迟反馈控制回声重复次数。",
         )
         ambience_rack = self._effect_rack()
-        ambience_layout.addLayout(ambience_rack)
+        ambience_layout.insertLayout(1, ambience_rack)
         self.reverb = self._new_field(
             "MasterReverbTime",
             "混响时间",
@@ -492,8 +525,8 @@ class MasterEffectsDialog(QDialog):
             self._original.delay_feedback,
             "延迟反馈：控制回声返回延迟线的比例；游戏说明约 2–20 次延迟声，本地试听固定约 250 ms 并按该范围近似。",
         )
-        ambience_rack.addWidget(EffectControlCard(tr("混响时间"), self.reverb))
-        ambience_rack.addWidget(EffectControlCard(tr("延迟反馈"), self.delay))
+        ambience_rack.addWidget(EffectControlCard(tr("混响时间"), self.reverb), 1, Qt.AlignTop)
+        ambience_rack.addWidget(EffectControlCard(tr("延迟反馈"), self.delay), 1, Qt.AlignTop)
         rack_row.addWidget(ambience, stretch=2)
 
         chorus, chorus_layout = self._section(
@@ -501,7 +534,7 @@ class MasterEffectsDialog(QDialog):
             "反馈决定旋动感，LFO 深度决定摆动幅度，LFO 频率决定摆动速度。",
         )
         chorus_rack = self._effect_rack()
-        chorus_layout.addLayout(chorus_rack)
+        chorus_layout.insertLayout(1, chorus_rack)
         self.chorus_feedback = self._new_field(
             "MasterChorusFeedback",
             "合唱反馈",
@@ -524,12 +557,16 @@ class MasterEffectsDialog(QDialog):
             "LFO 频率：控制合唱起伏速度；0 仍为慢速运动，本地试听按约 0.03–0.30 Hz 近似。",
         )
         chorus_rack.addWidget(
-            EffectControlCard(tr("合唱反馈"), self.chorus_feedback)
+            EffectControlCard(tr("合唱反馈"), self.chorus_feedback), 1, Qt.AlignTop,
         )
-        chorus_rack.addWidget(EffectControlCard(tr("LFO 深度"), self.chorus_depth))
-        chorus_rack.addWidget(EffectControlCard(tr("LFO 频率"), self.chorus_freq))
+        chorus_rack.addWidget(EffectControlCard(tr("LFO 深度"), self.chorus_depth), 1, Qt.AlignTop)
+        chorus_rack.addWidget(EffectControlCard(tr("LFO 频率"), self.chorus_freq), 1, Qt.AlignTop)
         rack_row.addWidget(chorus, stretch=3)
         body_layout.addLayout(rack_row)
+        preview_note = QLabel(tr("游戏参数 · 本地 FX 试听为未校准近似"))
+        preview_note.setObjectName("EffectPreviewNote")
+        preview_note.setWordWrap(True)
+        body_layout.addWidget(preview_note)
         body_layout.addStretch(1)
         layout.addWidget(body, stretch=1)
 

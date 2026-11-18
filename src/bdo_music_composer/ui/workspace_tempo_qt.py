@@ -1,54 +1,60 @@
-"""Workspace-level global tempo control and rehearsal-sync launcher."""
+"""Workspace-level global tempo and reference-audio tempo follow."""
 
 from __future__ import annotations
 
 from pathlib import Path
 import threading
 
-from PySide6.QtCore import QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QSizePolicy,
-    QSpinBox,
     QToolButton,
     QWidget,
 )
+from shiboken6 import isValid
 
 from bdo_export import BDO_BPM_MAX
 from bdo_music_composer.editor.model_change import ModelChange
 from bdo_music_composer.transcription.rhythm_alignment import (
     RhythmAlignmentConfig,
 )
-from bdo_music_composer.transcription.reference_tempo import (
-    ReferenceTempoError,
-    estimate_reference_tempo,
-)
+from bdo_music_composer.transcription.reference_tempo import estimate_reference_tempo
 from bdo_music_composer.ui.i18n import tr, trf
+from bdo_music_composer.ui.theme import hig_tokens as hig
+from bdo_music_composer.ui.theme.fluent_theme import FluentSymbol, set_fluent_symbol
+from bdo_music_composer.ui.ui_controls import GlyphSpinBox
 
 
 BDO_STATIC_BPM_MAX = BDO_BPM_MAX
 
 
-class ReferenceTempoWorker(QThread):
-    succeeded = Signal(object)
-    failed = Signal(str)
+class _ReferenceTempoSignals(QObject):
+    completed = Signal(object, object)
+
+
+class ReferenceTempoWorker(QRunnable):
 
     def __init__(
         self,
         path: str | Path,
-        parent: QWidget,
         *,
         prior_bpm: float,
     ) -> None:
-        super().__init__(parent)
+        super().__init__()
+        self.signals = _ReferenceTempoSignals()
         self.path = str(path)
         self.prior_bpm = float(prior_bpm)
         self._cancelled = threading.Event()
 
     def cancel(self) -> None:
         self._cancelled.set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled.is_set()
 
     def run(self) -> None:
         try:
@@ -57,19 +63,23 @@ class ReferenceTempoWorker(QThread):
                 prior_bpm=self.prior_bpm,
                 cancelled=self._cancelled.is_set,
             )
-        except ReferenceTempoError as exc:
-            if not self._cancelled.is_set():
-                self.failed.emit(str(exc))
-        except Exception as exc:
-            if not self._cancelled.is_set():
-                self.failed.emit(str(exc) or type(exc).__name__)
-        else:
-            if not self._cancelled.is_set():
-                self.succeeded.emit(estimate)
+        except Exception:
+            estimate = None
+        # Qt can tear down the signal object before the process-wide pool
+        # has joined a canceled analysis at application shutdown.
+        if isValid(self.signals):
+            try:
+                self.signals.completed.emit(self, estimate)
+            except RuntimeError:
+                if isValid(self.signals):
+                    raise
 
 
 class WorkspaceTempoHostMixin:
     """Keep one project BPM authoritative across editor consumers."""
+
+    def _displayed_global_bpm(self) -> int:
+        return min(BDO_STATIC_BPM_MAX, max(1, int(self.bpm_override or self.bpm)))
 
     def _build_global_bpm_control(self) -> QWidget:
         self.reference_tempo_worker = None
@@ -79,32 +89,39 @@ class WorkspaceTempoHostMixin:
         control.setObjectName("GlobalBpmControl")
         control.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         layout = QHBoxLayout(control)
-        layout.setContentsMargins(7, 1, 7, 1)
-        layout.setSpacing(5)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(hig.CONTROL_GAP)
         self.global_bpm_label = QLabel("BPM")
         self.global_bpm_label.setObjectName("TimelineControlLabel")
         self.global_bpm_label.setAccessibleName(tr("全局 BPM"))
-        self.global_bpm_spin = QSpinBox()
+        self.global_bpm_spin = GlyphSpinBox()
         self.global_bpm_spin.setObjectName("GlobalBpmSpin")
         self.global_bpm_spin.setRange(1, BDO_STATIC_BPM_MAX)
         self.global_bpm_spin.setKeyboardTracking(False)
-        self.global_bpm_spin.setAlignment(Qt.AlignCenter)
-        self.global_bpm_spin.setFixedWidth(84)
+        self.global_bpm_spin.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.global_bpm_spin.setFixedWidth(72)
         self.global_bpm_spin.setAccessibleName(tr("全局 BPM"))
+        self.global_bpm_spin.lineEdit().setAccessibleName(tr("全局 BPM"))
+        self.global_bpm_label.setBuddy(self.global_bpm_spin)
         tooltip = tr(
             "所有轨道共用；同步时间网格、试听、分析、自动保存和 BDO 导出。"
             "导出兼容范围 1–200；游戏官方作曲指南当前标注上限 180。"
         )
         control.setToolTip(tooltip)
         self.global_bpm_spin.setToolTip(tooltip)
-        self.global_bpm_spin.setValue(
-            min(BDO_STATIC_BPM_MAX, max(1, int(self.bpm_override or self.bpm)))
-        )
+        self.global_bpm_spin.setValue(self._displayed_global_bpm())
         self.global_bpm_spin.editingFinished.connect(
             self._commit_global_bpm_from_control
         )
         self.reference_bpm_follow = QToolButton()
         self.reference_bpm_follow.setObjectName("ReferenceBpmFollow")
+        self.reference_bpm_follow.setProperty("kind", "ghost")
+        set_fluent_symbol(
+            self.reference_bpm_follow, FluentSymbol.AUTO_TEMPO,
+            checked_symbol=FluentSymbol.AUTO_TEMPO_ACTIVE,
+        )
+        self.reference_bpm_follow.setIconSize(QSize(10, 10))
+        self.reference_bpm_follow.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.reference_bpm_follow.setCheckable(True)
         self.reference_bpm_follow.setText(tr("自动跟随"))
         self.reference_bpm_follow.setAccessibleName(tr("跟随参考 BPM"))
@@ -114,7 +131,9 @@ class WorkspaceTempoHostMixin:
         self.reference_bpm_follow.setChecked(
             bool(self.reference_layer_settings.get("follow_reference_bpm", True))
         )
-        self.reference_bpm_follow.setEnabled(bool(self.reference_audio_path))
+        has_reference = bool(self.reference_audio_path)
+        self.reference_bpm_follow.setEnabled(has_reference)
+        self.reference_bpm_follow.setVisible(has_reference)
         self.reference_bpm_follow.toggled.connect(
             self._reference_bpm_follow_toggled
         )
@@ -126,12 +145,8 @@ class WorkspaceTempoHostMixin:
     def _sync_global_bpm_control(self) -> None:
         if not hasattr(self, "global_bpm_spin"):
             return
-        value = min(
-            BDO_STATIC_BPM_MAX,
-            max(1, int(self.bpm_override or self.bpm)),
-        )
         self.global_bpm_spin.blockSignals(True)
-        self.global_bpm_spin.setValue(value)
+        self.global_bpm_spin.setValue(self._displayed_global_bpm())
         self.global_bpm_spin.blockSignals(False)
         self._sync_reference_bpm_follow_control()
 
@@ -142,7 +157,9 @@ class WorkspaceTempoHostMixin:
         self.reference_bpm_follow.setChecked(
             bool(self.reference_layer_settings.get("follow_reference_bpm", True))
         )
-        self.reference_bpm_follow.setEnabled(bool(self.reference_audio_path))
+        has_reference = bool(self.reference_audio_path)
+        self.reference_bpm_follow.setEnabled(has_reference)
+        self.reference_bpm_follow.setVisible(has_reference)
         self.reference_bpm_follow.blockSignals(False)
 
     def _set_global_bpm_compact(self, compact: bool) -> None:
@@ -150,12 +167,14 @@ class WorkspaceTempoHostMixin:
             return
         self.global_bpm_label.setVisible(True)
         self.reference_bpm_follow.setText("AUTO" if compact else tr("自动跟随"))
-        self.reference_bpm_follow.setFixedWidth(48 if compact else 72)
-        self.global_bpm_spin.setFixedWidth(84)
-        self.global_bpm_control.setFixedWidth(188 if compact else 212)
+        self.reference_bpm_follow.setFixedWidth(
+            max(48 if compact else 72, self.reference_bpm_follow.sizeHint().width())
+        )
 
     def _commit_global_bpm_from_control(self) -> None:
         new_bpm = int(self.global_bpm_spin.value())
+        if new_bpm == self._displayed_global_bpm():
+            return
         self.reference_layer_settings["follow_reference_bpm"] = False
         self._pending_reference_tempo_path = ""
         self._cancel_reference_tempo_worker()
@@ -295,24 +314,22 @@ class WorkspaceTempoHostMixin:
         self._pending_reference_tempo_path = ""
         worker = ReferenceTempoWorker(
             path,
-            self,
             prior_bpm=float(self.bpm_override or self.bpm),
         )
         self.reference_tempo_worker = worker
-        worker.succeeded.connect(
-            lambda estimate, current=worker:
-            self._reference_tempo_succeeded(current, estimate)
+        worker.signals.completed.connect(
+            self._reference_tempo_completed, Qt.ConnectionType.QueuedConnection,
         )
-        worker.failed.connect(
-            lambda _message, current=worker:
-            self._reference_tempo_failed(current)
-        )
-        worker.finished.connect(
-            lambda current=worker: self._reference_tempo_finished(current)
-        )
-        worker.finished.connect(worker.deleteLater)
         self._set_transcription_status(tr("正在检测参考音乐 BPM…"))
-        worker.start()
+        # The pool owns the running native thread beyond window teardown.
+        QThreadPool.globalInstance().start(worker)
+
+    def _reference_tempo_completed(self, worker: ReferenceTempoWorker, estimate: object) -> None:
+        if estimate is None:
+            self._reference_tempo_failed(worker)
+        else:
+            self._reference_tempo_succeeded(worker, estimate)
+        self._reference_tempo_finished(worker)
 
     def _reference_tempo_succeeded(
         self,
@@ -321,6 +338,7 @@ class WorkspaceTempoHostMixin:
     ) -> None:
         if (
             worker is not getattr(self, "reference_tempo_worker", None)
+            or getattr(worker, "cancelled", False)
             or worker.path != self.reference_audio_path
             or not bool(
                 self.reference_layer_settings.get("follow_reference_bpm", True)
@@ -330,26 +348,25 @@ class WorkspaceTempoHostMixin:
         self._apply_reference_tempo_estimate(estimate)
 
     def _reference_tempo_failed(self, worker: ReferenceTempoWorker) -> None:
-        if worker is getattr(self, "reference_tempo_worker", None):
+        if (
+            worker is getattr(self, "reference_tempo_worker", None)
+            and not getattr(worker, "cancelled", False)
+        ):
             self._set_transcription_status(
                 tr("未能可靠检测参考 BPM；保留当前值，可手动调节")
             )
 
     def _reference_tempo_finished(self, worker: ReferenceTempoWorker) -> None:
-        if worker is getattr(self, "reference_tempo_worker", None):
-            self.reference_tempo_worker = None
+        if worker is not getattr(self, "reference_tempo_worker", None):
+            return
+        self.reference_tempo_worker = None
         if getattr(self, "workspace_close_pending", False):
             self._pending_reference_tempo_path = ""
-            QTimer.singleShot(0, self.close)
+            QTimer.singleShot(0, self, self.close)
             return
         pending_path = getattr(self, "_pending_reference_tempo_path", "")
         if pending_path:
-            QTimer.singleShot(
-                0,
-                lambda path=pending_path: self._start_pending_reference_tempo_analysis(
-                    path
-                ),
-            )
+            self._start_pending_reference_tempo_analysis(pending_path)
 
     def _start_pending_reference_tempo_analysis(self, path: str) -> None:
         if (
@@ -365,18 +382,5 @@ class WorkspaceTempoHostMixin:
         worker = getattr(self, "reference_tempo_worker", None)
         if worker is not None:
             worker.cancel()
-
-    def _open_multiplayer_synchronizer(self) -> None:
-        from bdo_music_composer.ui.dialogs.multiplayer_sync_dialog import (
-            MultiplayerSyncDialog,
-        )
-
-        dialog = MultiplayerSyncDialog(
-            self,
-            global_bpm=int(self.bpm_override or self.bpm),
-            meter=int(self.time_sig),
-        )
-        dialog.exec()
-
 
 __all__ = ["BDO_STATIC_BPM_MAX", "WorkspaceTempoHostMixin"]

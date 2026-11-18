@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from bdo_midi.instruments import GM_PROGRAM_NAMES
 from bdo_music_composer.core.gm_program_translations import GM_PROGRAM_TRANSLATIONS
+from bdo_music_composer.ui.theme.fonts_qt import apply_application_fonts
 
 from .i18n_catalogs import EN, JA, KO
 
@@ -160,6 +161,7 @@ _TRADITIONAL_CHARACTER_TRANSLATION = str.maketrans(
     _TRADITIONAL_CATALOG_CHARACTERS,
 )
 _TAIWAN_UI_PHRASES = {
+    "欢迎使用": "歡迎使用",
     "为": "為",
     "文件路径": "檔案路徑",
     "文件格式": "檔案格式",
@@ -174,6 +176,7 @@ _TAIWAN_UI_PHRASES = {
     "读取": "讀取",
     "保存": "儲存",
     "设置": "設定",
+    "自定义接口": "自訂介面",
     "默认": "預設",
     "项目": "專案",
     "工程": "專案",
@@ -210,6 +213,7 @@ _TAIWAN_UI_PHRASES = {
     "兼容": "相容",
     "支持": "支援",
     "反馈": "回授",
+    "暂停接收新反馈。可查询已提交的反馈。": "暫停接收新回饋。可查詢已送出的回饋。",
     "曲谱": "樂譜",
     "轨道": "音軌",
     "复制": "複製",
@@ -1331,6 +1335,18 @@ _REGIONAL_QUALITY_TRANSLATIONS = {
         "今回の適用待ち内容を適用、元に戻す、または消去してから、オーディオ位置を変更してください。",
         "적용 대기 내용을 적용, 실행 취소 또는 지운 뒤 오디오 정렬을 변경하세요.",
     ),
+    "参考音频偏移": ("Reference Audio Offset", "参照オーディオのオフセット", "참조 오디오 오프셋"),
+    "参考音频偏移…": ("Reference Audio Offset…", "参照オーディオのオフセット…", "참조 오디오 오프셋…"),
+    "参考音频选项": ("Reference audio options", "参照オーディオのオプション", "참조 오디오 옵션"),
+    "重新关联音频": ("Relink reference audio", "音源を再リンク", "오디오 다시 연결"),
+    "波形": ("Waveform", "波形", "파형"),
+    "暂无波形预览": ("Waveform preview unavailable", "波形プレビューを表示できません", "파형 미리보기를 표시할 수 없음"),
+    "替换参考音频…": ("Replace Reference Audio…", "参照オーディオを置き換える…", "참조 오디오 바꾸기…"),
+    "正值延后播放，波形右移。负值提前播放，波形左移。": (
+        "Positive offsets move the waveform right and delay playback. Negative offsets move it left and start playback earlier.",
+        "正の値では波形が右に移動し、再生が遅く始まります。負の値では波形が左に移動し、再生が早く始まります。",
+        "양수는 파형을 오른쪽으로 옮겨 재생을 늦춥니다. 음수는 파형을 왼쪽으로 옮겨 재생을 앞당깁니다.",
+    ),
     "当前仍有未提交候选草稿。请先应用，或撤销/清除本次暂存后再更换音频、调整偏移或重新分析。": (
         "There is an unapplied candidate draft. Apply it, or undo/clear the pending changes before changing audio, adjusting the offset, or analyzing again.",
         "未適用の候補下書きがあります。適用するか、適用待ち内容を元に戻す／消去してから、オーディオ変更、オフセット調整、再解析を行ってください。",
@@ -1339,82 +1355,6 @@ _REGIONAL_QUALITY_TRANSLATIONS = {
 }
 
 for _source, (_english, _japanese, _korean) in _REGIONAL_QUALITY_TRANSLATIONS.items():
-    EN[_source] = _english
-    JA[_source] = _japanese
-    KO[_source] = _korean
-
-del _source, _english, _japanese, _korean
-
-
-_HOME_LIBRARY_TRANSLATIONS = {
-    "本地曲谱工作台": (
-        "Local score workspace",
-        "ローカル楽譜ワークスペース",
-        "로컬 악보 작업 공간",
-    ),
-    "资料库": ("Library", "ライブラリ", "라이브러리"),
-    "最近项目": ("Recent Projects", "最近のプロジェクト", "최근 프로젝트"),
-    "最近项目、自动保存与示例": (
-        "Recent projects, autosaves, and examples",
-        "最近のプロジェクト、自動保存、サンプル",
-        "최근 프로젝트, 자동 저장 및 예제",
-    ),
-    "Black Desert Music 目录中的曲谱": (
-        "Scores in the Black Desert Music folder",
-        "Black Desert Music フォルダーの楽譜",
-        "Black Desert Music 폴더의 악보",
-    ),
-    "本地处理 · 不上传工程": (
-        "Local processing · projects stay on this device",
-        "ローカル処理 · プロジェクトはアップロードされません",
-        "로컬 처리 · 프로젝트를 업로드하지 않음",
-    ),
-    "打开游戏目录": (
-        "Open Game Folder",
-        "ゲームフォルダーを開く",
-        "게임 폴더 열기",
-    ),
-    "继续创作": ("Continue Creating", "制作を続ける", "계속 만들기"),
-    "从最近工程继续，或开始一个新的编曲项目": (
-        "Continue a recent project or start a new arrangement",
-        "最近のプロジェクトを続けるか、新しい編曲を始めます",
-        "최근 프로젝트를 계속하거나 새 편곡을 시작하세요",
-    ),
-    "新建空白项目\n从一条空白轨道开始": (
-        "New Blank Project\nStart with an empty track",
-        "空のプロジェクトを作成\n空のトラックから開始",
-        "빈 프로젝트 만들기\n빈 트랙에서 시작",
-    ),
-    "导入 MIDI\n继续编排已有音乐": (
-        "Import MIDI\nContinue arranging existing music",
-        "MIDI を読み込む\n既存の曲を編曲",
-        "MIDI 가져오기\n기존 음악 계속 편곡",
-    ),
-    "打开工程\n浏览本地项目文件": (
-        "Open Project\nBrowse local project files",
-        "プロジェクトを開く\nローカルファイルを参照",
-        "프로젝트 열기\n로컬 프로젝트 파일 찾기",
-    ),
-    "{count} 人": (
-        "{count} players",
-        "{count}人",
-        "{count}명",
-    ),
-    "上限 {limit} 人": (
-        "{limit}-player limit",
-        "上限{limit}人",
-        "최대 {limit}명",
-    ),
-    "{count} 种乐器": (
-        "{count} instruments",
-        "{count}楽器",
-        "{count}개 악기",
-    ),
-}
-
-for _source, (_english, _japanese, _korean) in _HOME_LIBRARY_TRANSLATIONS.items():
-    if _source in EN or _source in JA or _source in KO:
-        raise RuntimeError(f"duplicate home localization source: {_source}")
     EN[_source] = _english
     JA[_source] = _japanese
     KO[_source] = _korean
@@ -2250,6 +2190,7 @@ class Localizer(QObject):
             else "auto"
         )
         self.language = resolve_language(self.requested_language)
+        apply_application_fonts(self.app, self.language)
         self.sources: WeakKeyDictionary[QObject, dict[str, object]] = WeakKeyDictionary()
         self.formatted_sources: OrderedDict[
             str,
@@ -2310,6 +2251,7 @@ class Localizer(QObject):
             else "auto"
         )
         self.language = resolve_language(self.requested_language)
+        apply_application_fonts(self.app, self.language)
         callback_seen: set[int] = set()
         for widget in self.app.topLevelWidgets():
             self.translate_tree(
@@ -2326,14 +2268,10 @@ class Localizer(QObject):
             self.translate_tree(watched, _invoke_dynamic_callbacks=False)
         return False
 
-    @staticmethod
-    def _catalog_sources() -> frozenset[str]:
-        return _TRANSLATION_SOURCES
-
     def _recover_source(self, text: str, language: str) -> str:
         """Recover a source key without rewriting unknown dynamic content."""
 
-        if text in self._catalog_sources():
+        if text in _TRANSLATION_SOURCES:
             return text
         source = _REVERSE_TRANSLATIONS.get(language, {}).get(text)
         if source is not None:
@@ -2357,14 +2295,20 @@ class Localizer(QObject):
         *,
         source_language: str,
     ) -> None:
-        source_data = self.sources.setdefault(owner, {})
         current = str(getter())
-        previous = source_data.get(key)
+        source_data = self.sources.get(owner)
+        previous = source_data.get(key) if source_data is not None else None
+        if previous is None and not current:
+            return
+        if source_data is None:
+            self.sources[owner] = source_data = {}
         opaque = False
         if (
             isinstance(previous, dict)
             and current == str(previous.get("rendered", ""))
         ):
+            if previous.get("language") == self.language:
+                return
             source = str(previous.get("source", current))
             values = previous.get("values")
             formatted_values = dict(values) if isinstance(values, dict) else None
@@ -2876,6 +2820,37 @@ for _source, (_english, _japanese, _korean) in _CLIP_MERGE_CONFIRMATION_TRANSLAT
 del _source, _english, _japanese, _korean
 
 _ARRANGEMENT_REFINEMENT_TRANSLATIONS = {
+    "更多": ("More", "追加メニュー", "더 보기"),
+    "导出 BDO": ("Export BDO", "BDOを書き出す", "BDO 내보내기"),
+    "MIDI 转 BDO": ("MIDI to BDO", "MIDIからBDOへ", "MIDI를 BDO로"),
+    "导入 MIDI 后选择导出或继续编辑": (
+        "Import MIDI, then export or keep editing",
+        "MIDIを読み込み、書き出すか編集を続ける",
+        "MIDI를 가져온 다음 내보내거나 편집을 계속합니다",
+    ),
+    "曲谱：{name}": ("Score: {name}", "楽譜：{name}", "악보: {name}"),
+    "{tracks} 轨 · {notes} 音符 · {numerator}/{denominator} 拍": (
+        "{tracks} tracks · {notes} notes · {numerator}/{denominator} meter",
+        "{tracks}トラック · {notes}ノート · {numerator}/{denominator}拍子",
+        "트랙 {tracks}개 · 음표 {notes}개 · {numerator}/{denominator}박자",
+    ),
+    "导出时需要读取 Owner ID。": (
+        "Export requires loading an Owner ID.",
+        "書き出しには Owner ID の読み込みが必要です。",
+        "내보내려면 Owner ID를 불러와야 합니다.",
+    ),
+    "继续编辑": ("Keep Editing", "編集を続ける", "계속 편집"),
+    "添加参考音频": ("Add Reference Audio", "参照オーディオを追加", "참조 오디오 추가"),
+    "曲谱工具": ("Score Tools", "楽譜ツール", "악보 도구"),
+    "全曲力度": ("Song Velocity", "曲全体のベロシティ", "전체 곡 벨로시티"),
+    "音符力度倍率": ("Note Velocity Scale", "ノートベロシティ倍率", "음표 벨로시티 배율"),
+    "从想法开始": ("Start from an Idea", "アイデアから始める", "아이디어로 시작"),
+    "钢琴卷帘": ("Piano Roll", "ピアノロール", "피아노 롤"),
+    "最小化": ("Minimize", "最小化", "최소화"),
+    "最大化": ("Maximize", "最大化", "최대화"),
+    "还原窗口": ("Restore Window", "ウィンドウを元に戻す", "창 복원"),
+    "关闭窗口": ("Close Window", "ウィンドウを閉じる", "창 닫기"),
+    "运行状态": ("Runtime Status", "動作状況", "실행 상태"),
     "自动吸附已激活：移动或裁切片段时自动对齐；再次点击关闭（Alt 临时关闭）": ("Auto snap is on: clips align while moving or trimming; click again to turn it off (hold Alt to bypass)", "自動スナップはオンです。クリップの移動・トリミング時に整列します。もう一度クリックするとオフになります（Altで一時解除）", "자동 스냅이 켜져 있습니다. 클립 이동 또는 자르기 시 자동 정렬됩니다. 다시 클릭하면 꺼집니다(Alt로 일시 해제)"),
     "自动吸附未激活：移动和裁切片段时不会自动对齐；点击开启": ("Auto snap is off: clips will not align while moving or trimming; click to turn it on", "自動スナップはオフです。クリップの移動・トリミング時に整列しません。クリックするとオンになります", "자동 스냅이 꺼져 있습니다. 클립 이동 또는 자르기 시 자동 정렬되지 않습니다. 클릭하면 켜집니다"),
     "自动吸附已激活": ("Auto snap on", "自動スナップ オン", "자동 스냅 켜짐"),
@@ -2966,11 +2941,6 @@ _WORKSPACE_TEMPO_TRANSLATIONS = {
         "글로벌 BPM을 {bpm}(으)로 설정했습니다. 시간 그리드, 미리 듣기 및 내보내기가 동기화되었습니다",
     ),
     "多人同步器": ("Multiplayer Sync", "マルチプレイ同期", "멀티플레이 동기화"),
-    "多人同步器暂未开放；网络房间功能仍在开发中": (
-        "Multiplayer Sync is not available yet; network rooms are still in development",
-        "マルチプレイ同期はまだ利用できません。ネットワークルーム機能は開発中です",
-        "멀티플레이 동기화는 아직 사용할 수 없으며 네트워크 방 기능은 개발 중입니다",
-    ),
     "网络合奏房间": ("Network Ensemble Room", "ネットワーク合奏ルーム", "네트워크 합주 방"),
     "未连接 · 功能预留": ("Disconnected · reserved", "未接続・準備中", "연결 안 됨 · 예약 기능"),
     "用于协调黑色沙漠双队伍或 FF14 合奏的共同开始时刻；不控制游戏按键。": (
@@ -3207,6 +3177,17 @@ _ARRANGEMENT_IMPORT_TRANSLATIONS = {
     "选择要追加的 MIDI 文件": ("Select MIDI File to Append", "追加するMIDIファイルを選択", "추가할 MIDI 파일 선택"),
     "选择要追加的游戏曲谱": ("Select Game Score to Append", "追加するゲーム楽譜を選択", "추가할 게임 악보 선택"),
     "游戏曲谱 (*.bdo);;所有文件 (*.*)": ("Game Score (*.bdo);;All Files (*.*)", "ゲーム楽譜 (*.bdo);;すべてのファイル (*.*)", "게임 악보 (*.bdo);;모든 파일 (*.*)"),
+    "游戏曲谱 (*.bdo *.bdom);;所有文件 (*.*)": ("Game Score (*.bdo *.bdom);;All Files (*.*)", "ゲーム楽譜 (*.bdo *.bdom);;すべてのファイル (*.*)", "게임 악보 (*.bdo *.bdom);;모든 파일 (*.*)"),
+    "这份曲谱使用 BDO v{version}。请选择 BDO v{supported} 曲谱。": (
+        "This score uses BDO v{version}. Select a BDO v{supported} score.",
+        "この楽譜は BDO v{version} 形式です。BDO v{supported} の楽譜を選択してください。",
+        "이 악보는 BDO v{version} 형식입니다. BDO v{supported} 악보를 선택하세요.",
+    ),
+    "无法识别文件头。请选择有效的 BDO v{supported} 曲谱。": (
+        "The file header is unrecognized. Select a valid BDO v{supported} score.",
+        "ファイルヘッダーを認識できません。有効な BDO v{supported} 楽譜を選択してください。",
+        "파일 헤더를 인식할 수 없습니다. 유효한 BDO v{supported} 악보를 선택하세요.",
+    ),
     "当前播放头": ("Current Playhead", "現在の再生ヘッド", "현재 재생 헤드"),
     "工程开头": ("Project Start", "プロジェクト先頭", "프로젝트 시작"),
     "放置追加音轨": ("Place Appended Tracks", "追加トラックを配置", "추가 트랙 배치"),
@@ -3404,6 +3385,10 @@ for _source, (
 del _source, _english, _japanese, _korean
 
 _DAW_WORKFLOW_TRANSLATIONS = {
+    "音高与混音": ("Pitch and Mixing", "音高とミックス", "피치 및 믹싱"),
+    "粘贴音符到此处": ("Paste Notes Here", "ここにノートを貼り付け", "여기에 음표 붙여넣기"),
+    "适应所选音符": ("Fit Selected Notes", "選択ノートに合わせる", "선택 음표에 맞추기"),
+    "适应整轨音符": ("Fit All Notes", "トラック全体に合わせる", "트랙 전체 음표에 맞추기"),
     "F1 快捷键；W/H 适配视图；U 折叠/展开组；Ctrl+D 复制片段；Ctrl+E 在播放头切分；Enter 编辑焦点；方向键导航": (
         "F1 shortcuts; W/H fit the view; U folds/unfolds groups; Ctrl+D duplicates a clip; Ctrl+E splits at the playhead; Enter edits the focus; arrows navigate",
         "F1 ショートカット。W/Hで表示を合わせ、Uでグループを折りたたみ／展開、Ctrl+Dでクリップ複製、Ctrl+Eで再生ヘッド位置を分割、Enterでフォーカスを編集、矢印キーで移動",
@@ -3430,6 +3415,11 @@ _DAW_WORKFLOW_TRANSLATIONS = {
     "音块": ("Clip", "クリップ", "클립"),
     "时间轴快捷键": (
         "Timeline Shortcuts", "タイムラインのショートカット", "타임라인 단축키",
+    ),
+    "Esc 或单击空白处取消选择": (
+        "Press Esc or click an empty area to clear selection",
+        "Escキーを押すか空白をクリックして選択を解除",
+        "Esc 키를 누르거나 빈 곳을 클릭하여 선택 해제",
     ),
     "F1 快捷键；Ctrl+D 复制片段；Ctrl+E 在播放头切分；Enter 编辑；M 静音；S 独奏；上下键选择轨道": (
         "F1 shortcuts; Ctrl+D duplicate clip; Ctrl+E split at playhead; Enter edit; M mute; S solo; Use Up/Down to select a track",
@@ -3542,17 +3532,14 @@ _DAW_WORKFLOW_TRANSLATIONS = {
     ),
 }
 
-for _source, (_english, _japanese, _korean) in _DAW_WORKFLOW_TRANSLATIONS.items():
-    EN[_source] = _english
-    JA[_source] = _japanese
-    KO[_source] = _korean
-
-del _source, _english, _japanese, _korean
-
-from .ui_refinement_translations import UI_REFINEMENT_TRANSLATIONS
+from .ui_refinement_translations import TIMELINE_HELP_TRANSLATIONS, UI_REFINEMENT_TRANSLATIONS
 from .creation_translations import CREATION_TRANSLATIONS
+from .usage_telemetry_translations import USAGE_TELEMETRY_TRANSLATIONS
 
-for _source, (_english, _japanese, _korean) in (UI_REFINEMENT_TRANSLATIONS | CREATION_TRANSLATIONS).items():
+for _source, (_english, _japanese, _korean) in (
+    _DAW_WORKFLOW_TRANSLATIONS | UI_REFINEMENT_TRANSLATIONS
+    | CREATION_TRANSLATIONS | USAGE_TELEMETRY_TRANSLATIONS | TIMELINE_HELP_TRANSLATIONS
+).items():
     EN[_source] = _english
     JA[_source] = _japanese
     KO[_source] = _korean

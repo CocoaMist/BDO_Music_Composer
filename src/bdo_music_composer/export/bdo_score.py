@@ -10,6 +10,7 @@ from typing import Sequence
 from bdo_codec import (  # noqa: E402
     BDO_VERSION,
     BdoDocument,
+    BdoUnsupportedVersionError,
     compare_score_documents,
     decode_score,
     encode_score,
@@ -130,9 +131,21 @@ class ScoreDiff:
 
 
 def snapshot_from_bytes(data: bytes, *, allow_trailing_data: bool = False) -> BdoScoreSnapshot:
-    document = decode_score(data)
+    return snapshot_from_decoded_score(
+        decode_score(data), allow_trailing_data=allow_trailing_data
+    )
+
+
+def snapshot_from_decoded_score(
+    document: BdoDocument, *, allow_trailing_data: bool = False
+) -> BdoScoreSnapshot:
+    """Project a decoded score without reopening or decrypting its source."""
+
+    if document.source_bytes is None:
+        raise ValueError("BDO score snapshot requires a decoded source")
     if any(document.trailing_data) and not allow_trailing_data:
         raise ValueError("BDO payload contains non-zero trailing data")
+    payload_size = len(document.source_bytes) - 4
     tracks: list[BdoTrackSnapshot] = []
     for group_index, group in enumerate(document.groups):
         for track_index, track in enumerate(group.tracks):
@@ -158,8 +171,8 @@ def snapshot_from_bytes(data: bytes, *, allow_trailing_data: bool = False) -> Bd
         document.header.instrument_tag,
         len(document.groups),
         tuple(tracks),
-        len(data) - 4,
-        len(data) - 4 - len(document.trailing_data),
+        payload_size,
+        payload_size - len(document.trailing_data),
         len(document.trailing_data),
     )
 
@@ -236,6 +249,8 @@ def compare_scores(
 __all__ = [
     "BdoNoteSnapshot", "BdoScoreSnapshot", "BdoTrackSnapshot", "ScoreDiff",
     "ScoreDiffEntry", "TIME_TOLERANCE_MS", "compare_scores", "read_bdo_score",
-    "snapshot_from_bytes", "BdoDocument", "compare_score_documents", "decode_score",
+    "snapshot_from_bytes", "snapshot_from_decoded_score", "BdoDocument",
+    "BDO_VERSION", "BdoUnsupportedVersionError",
+    "compare_score_documents", "decode_score",
     "encode_score", "read_score", "validate_score", "write_score",
 ]

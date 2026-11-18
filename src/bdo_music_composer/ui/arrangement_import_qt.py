@@ -6,11 +6,16 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox, QMenu
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QMenu
 
 from bdo_music_composer.core.conversion_settings import ConversionSettings
 from bdo_music_composer.editor.arrangement_import import plan_arrangement_append
-from bdo_music_composer.export.bdo_score import read_bdo_score
+from bdo_music_composer.export.bdo_score import (
+    BDO_VERSION,
+    BdoUnsupportedVersionError,
+    read_bdo_score,
+)
+from bdo_music_composer.ui.dialogs.composer_prompt import choose_item, choose_prompt
 from bdo_music_composer.ui.editor.editor_ui_helpers import TRACK_COLORS
 from bdo_music_composer.ui.editor_import_qt import (
     prepare_midi_import,
@@ -23,6 +28,7 @@ _DROPPABLE_ARRANGEMENT_SUFFIXES = {
     ".mid": "midi",
     ".midi": "midi",
     ".bdo": "bdo",
+    ".bdom": "bdo",
 }
 
 
@@ -117,39 +123,18 @@ class ArrangementImportHostMixin:
         )
 
     def _prompt_dropped_arrangement_action(self, path: Path) -> str:
-        dialog = QMessageBox(self)
-        dialog.setIcon(QMessageBox.Icon.Question)
-        dialog.setWindowTitle(tr("导入文件"))
-        dialog.setText(trf(
-            "当前混音台已有内容。如何处理 {file}？",
-            file=path.name,
-        ))
-        dialog.setInformativeText(tr(
-            "保存当前工程后打开该文件，或将它追加到现有混音台。"
-        ))
-        save_open_button = dialog.addButton(
-            tr("保存并打开"), QMessageBox.ButtonRole.AcceptRole
+        return choose_prompt(
+            self,
+            tr("导入文件"),
+            trf("当前混音台已有内容。如何处理 {file}？", file=path.name),
+            (
+                ("close", tr("关闭")),
+                ("save_open", tr("保存并打开")),
+                ("append", tr("追加")),
+            ),
+            detail=tr("保存当前工程后打开该文件，或将它追加到现有混音台。"),
+            default="append", cancel="close",
         )
-        append_button = dialog.addButton(
-            tr("追加"), QMessageBox.ButtonRole.ActionRole
-        )
-        close_button = dialog.addButton(
-            tr("关闭"), QMessageBox.ButtonRole.RejectRole
-        )
-        dialog.setDefaultButton(append_button)
-        dialog.setEscapeButton(close_button)
-        dialog.exec()
-        clicked = dialog.clickedButton()
-        role = (
-            dialog.buttonRole(clicked)
-            if clicked is not None
-            else QMessageBox.ButtonRole.RejectRole
-        )
-        if role == QMessageBox.ButtonRole.AcceptRole:
-            return "save_open"
-        if role == QMessageBox.ButtonRole.ActionRole:
-            return "append"
-        return "close"
 
     def _save_project_before_dropped_open(self, path: Path) -> bool:
         queued = self._autosave_project(
@@ -215,10 +200,26 @@ class ArrangementImportHostMixin:
             self,
             tr("选择要追加的游戏曲谱"),
             "",
-            tr("游戏曲谱 (*.bdo);;所有文件 (*.*)"),
+            tr("游戏曲谱 (*.bdo *.bdom);;所有文件 (*.*)"),
         )
         if path:
             self._append_arrangement_source(Path(path), "bdo")
+
+    def _show_bdo_version_notice(self, error: BdoUnsupportedVersionError) -> None:
+        if not 0 < error.version < 100:
+            self.show_toast(
+                trf("无法识别文件头。请选择有效的 BDO v{supported} 曲谱。", supported=BDO_VERSION),
+                kind="error", duration_ms=7000,
+            )
+            return
+        message = trf(
+            "这份曲谱使用 BDO v{version}。请选择 BDO v{supported} 曲谱。",
+            version=error.version, supported=BDO_VERSION,
+        )
+        choose_prompt(
+            self, tr("打开游戏曲谱失败"), message, (("close", tr("确定")),),
+            default="close", cancel="close",
+        )
 
     def _arrangement_import_offset(self) -> float | None:
         playhead_ms = max(0.0, float(self.timeline.playhead_ms))
@@ -226,13 +227,11 @@ class ArrangementImportHostMixin:
             return 0.0
         at_playhead = tr("当前播放头")
         at_start = tr("工程开头")
-        selected, accepted = QInputDialog.getItem(
+        selected, accepted = choose_item(
             self,
             tr("放置追加音轨"),
             tr("选择导入内容的起始位置"),
             (at_playhead, at_start),
-            0,
-            False,
         )
         if not accepted:
             return None
@@ -273,11 +272,13 @@ class ArrangementImportHostMixin:
                 master_effects=self._current_master_effects(),
                 colors=TRACK_COLORS,
             )
+        except BdoUnsupportedVersionError as error:
+            self._show_bdo_version_notice(error)
+            return
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                tr("追加音轨失败"),
+            self.show_toast(
                 trf("无法追加 {file}：{error}", file=path.name, error=exc),
+                kind="error", duration_ms=7000,
             )
             return
 
