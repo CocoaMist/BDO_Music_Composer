@@ -37,6 +37,9 @@ class CreationAssistantHostMixin:
         if dialog.feedback_box.isChecked():
             self._record_creation_choice(session, dialog.selected_parts(), "applied")
 
+    def _open_score_agent(self):
+        self.workbench.open_score_agent()
+
     def _record_creation_choice(self, session, keys, outcome):
         try:
             record_choice(USER_DATA_DIR / "creation" / "choices.json", session.candidate.brief, keys, outcome)
@@ -45,22 +48,22 @@ class CreationAssistantHostMixin:
             # transaction as failed or roll it back.
             self.show_toast(tr("曲谱操作不受影响，但本次本地反馈未能保存。"), kind="warning")
 
-    def _apply_creation_session(self, session, keys):
+    def _apply_creation_session(self, session, keys) -> tuple[int, ...]:
         session.context.assert_current(self.tracks, self.bpm_override or self.bpm, self.time_sig, self.time_sig_denominator)
         proposed = session.materialize(keys)
         old_by_id = {t.track_id: t for t in self.tracks}
-        changed = []
+        changed: set[int] = set()
         for track in proposed:
             previous = old_by_id.get(track.track_id)
             if previous is None:
                 role = PART_LABELS.get(track.display_name, track.display_name)
                 track.display_name = trf("{part} · {character}", part=tr(role), character=tr(CHARACTER_LABELS[session.candidate.brief.character]))
-                changed.append(track.track_id)
+                changed.add(track.track_id)
             elif track != previous:
                 track.bdo_source_note_records = reconcile_game_velocity_records(previous.notes, previous.bdo_source_note_records, track.notes)
-                changed.append(track.track_id)
+                changed.add(track.track_id)
         if not changed:
-            return False
+            return ()
         self._stop_preview(reset_playhead=False)
         self._push_project_snapshot()
         # Preserve TrackState identity for open editors; publish only after
@@ -84,4 +87,4 @@ class CreationAssistantHostMixin:
         self._schedule_transcription_assist_refresh()
         self.status_label.setText(tr("创作建议已应用，可撤销并继续编辑。"))
         self.show_toast(tr("创作建议已应用，可撤销并继续编辑。"), kind="success")
-        return True
+        return tuple(track.track_id for track in final if track.track_id in changed)

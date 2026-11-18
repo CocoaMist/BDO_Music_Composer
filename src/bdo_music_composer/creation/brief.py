@@ -21,6 +21,10 @@ class MusicalCharacter(StrEnum):
     DRIVING = "driving"
 
 
+MIN_RELATIVE_VELOCITY_PERCENT = 25
+MAX_RELATIVE_VELOCITY_PERCENT = 200
+
+
 @dataclass(frozen=True, slots=True)
 class CreationBrief:
     action: CreationAction
@@ -39,6 +43,7 @@ class CreationBrief:
     # Imported GM drum pitch 48 is ambiguous with native BDO kick. Conversion
     # therefore needs an explicit encoding decision, never pitch-range guessing.
     drums_are_gm: bool = False
+    velocity_scale_percent: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.action, CreationAction) or not isinstance(self.character, MusicalCharacter):
@@ -47,6 +52,13 @@ class CreationBrief:
             raise ValueError("invalid creation key or start bar")
         if not 1 <= self.bars <= 16 or not 0 <= self.variant <= 31:
             raise ValueError("creation length or variant exceeds its limit")
+        percent = self.velocity_scale_percent
+        if percent is not None:
+            if (type(percent) is not int
+                    or not MIN_RELATIVE_VELOCITY_PERCENT <= percent <= MAX_RELATIVE_VELOCITY_PERCENT):
+                raise ValueError("relative velocity scale is outside its range")
+            if self.action is not CreationAction.EXPRESS or self.rewrite_velocity:
+                raise ValueError("relative velocity scale requires expression without rewriting velocities")
 
     def time_range(self, bpm: int, meter: int) -> tuple[float, float]:
         bar_ms = 60_000.0 / bpm * meter

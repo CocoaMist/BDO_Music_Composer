@@ -15,6 +15,7 @@ import math
 REFERENCE_CLOCK_SOFT_DRIFT_MS = 80.0
 REFERENCE_CLOCK_HARD_DRIFT_MS = 250.0
 REFERENCE_CLOCK_RESYNC_COOLDOWN_S = 0.35
+REFERENCE_CLOCK_ENTRY_WINDOW_MS = 40.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +25,7 @@ class ReferenceClockDecision:
     seek: bool
     play: bool
     pause: bool
+    seek_to_source_start: bool = False
 
 
 def reference_clock_decision(
@@ -37,6 +39,8 @@ def reference_clock_decision(
     force_seek: bool,
     now_seconds: float,
     last_resync_seconds: float,
+    previous_master_project_ms: float | None = None,
+    reference_has_ended: bool = False,
 ) -> ReferenceClockDecision:
     """Return one bounded synchronization action for a project-time master."""
 
@@ -63,10 +67,22 @@ def reference_clock_decision(
     cooldown_elapsed = (
         now - last_resync >= REFERENCE_CLOCK_RESYNC_COOLDOWN_S
     )
+    can_start = want_playback and inside and not reference_is_playing
+    crossed_source_start = (
+        can_start
+        and previous_master_project_ms is not None
+        and previous_master_project_ms < master - audio
+    )
+    # An independent reference decoder may reach EOF just ahead of the master.
+    # Do not repeat its tail while the device is still presenting final frames.
+    hold_ended_reference = reference_has_ended and not (force_seek or crossed_source_start)
+    should_play = can_start and not hold_ended_reference
     seek = bool(
         inside
+        and not hold_ended_reference
         and (
             force_seek
+            or should_play
             or absolute_drift >= REFERENCE_CLOCK_HARD_DRIFT_MS
             or (
                 absolute_drift >= REFERENCE_CLOCK_SOFT_DRIFT_MS
@@ -74,11 +90,16 @@ def reference_clock_decision(
             )
         )
     )
-    should_play = bool(
-        want_playback and inside and not reference_is_playing
-    )
     should_pause = bool(
         reference_is_playing and (not want_playback or not inside)
+    )
+    # A continuous crossing can arrive one poll late. Keep the source attack
+    # while allowing explicit seeks and other starts to target the exact clock.
+    seek_to_source_start = (
+        crossed_source_start
+        and not force_seek
+        and previous_master_project_ms is not None
+        and master - previous_master_project_ms <= REFERENCE_CLOCK_ENTRY_WINDOW_MS
     )
     return ReferenceClockDecision(
         inside,
@@ -86,6 +107,7 @@ def reference_clock_decision(
         seek,
         should_play,
         should_pause,
+        seek_to_source_start,
     )
 
 

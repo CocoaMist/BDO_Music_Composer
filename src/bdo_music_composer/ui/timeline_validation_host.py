@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from bdo_music_composer.export.bdo_validation import localized_validation_message
+from bdo_midi import Note
+
 from bdo_music_composer.editor.arrangement_clip import project_track_notes
+from bdo_music_composer.export.bdo_validation import localized_validation_message
 from bdo_music_composer.ui.i18n import tr, trf
 
 
@@ -25,7 +27,9 @@ class TimelineValidationHostMixin:
         errors = [item for item in issues if item.severity == "error"]
         merges = [item for item in issues if item.code == "tracks.merge"]
         tracks_by_id = {int(track.track_id): track for track in self.tracks}
-        track_notices: dict[int, dict[str, list]] = {}
+        # Keep the first occurrence's display order while deduplicating notes.
+        track_notices: dict[int, dict[str, dict[object, None]]] = {}
+        projected_by_track: dict[int, tuple[Note, ...]] = {}
         for issue in issues:
             if issue.severity != "error" and issue.code != "tracks.merge":
                 continue
@@ -45,10 +49,9 @@ class TimelineValidationHostMixin:
             for track_id in track_ids:
                 notice = track_notices.setdefault(
                     track_id,
-                    {"errors": [], "attentions": [], "invalid_note_keys": []},
+                    {"errors": {}, "attentions": {}, "invalid_note_keys": {}},
                 )
-                if message not in notice[category]:
-                    notice[category].append(message)
+                notice[category][message] = None
                 if (
                     issue.severity == "error"
                     and issue.track_id is not None
@@ -58,7 +61,10 @@ class TimelineValidationHostMixin:
                     track = tracks_by_id.get(track_id)
                     if track is None:
                         continue
-                    projected_notes = project_track_notes(track)
+                    projected_notes = projected_by_track.get(track_id)
+                    if projected_notes is None:
+                        projected_notes = project_track_notes(track)
+                        projected_by_track[track_id] = projected_notes
                     for note_index in issue.note_indices:
                         index = int(note_index)
                         if not 0 <= index < len(projected_notes):
@@ -66,8 +72,7 @@ class TimelineValidationHostMixin:
                         key = self.timeline._validation_note_key(
                             projected_notes[index]
                         )
-                        if key not in notice["invalid_note_keys"]:
-                            notice["invalid_note_keys"].append(key)
+                        notice["invalid_note_keys"][key] = None
         self.timeline.set_validation_notices({
             track_id: {
                 "errors": tuple(notice["errors"]),
@@ -100,7 +105,7 @@ class TimelineValidationHostMixin:
                 for notice in track_notices.values()
             )
             text = trf(
-                "{count} 条轨道使用相同乐器；已标为琥珀色，导出时会合并。",
+                "{count} 条轨道使用相同乐器，导出时会合并。",
                 count=attention_track_count,
             )
             toast_kind = "warning"

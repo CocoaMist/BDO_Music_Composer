@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from bdo_music_composer.editor.game_score_model import serialized_game_instrument_id
 from bdo_music_composer.editor.model_change import ModelChange
 from bdo_music_composer.editor.track_merge import TrackMergePlan, plan_track_merge
+from bdo_music_composer.ui.dialogs.composer_prompt import choose_item
 from bdo_music_composer.ui.i18n import tr, trf
 
 
@@ -30,13 +31,11 @@ class TrackMergeHostMixin:
             )
             for track in candidates
         ]
-        selected, accepted = QInputDialog.getItem(
+        selected, accepted = choose_item(
             self,
             tr("合并同乐器轨道"),
             trf("选择要并入“{name}”的轨道：", name=source.display_name),
             labels,
-            0,
-            False,
         )
         if not accepted:
             return

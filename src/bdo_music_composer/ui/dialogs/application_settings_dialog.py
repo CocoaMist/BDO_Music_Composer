@@ -10,15 +10,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, cast
 
-from PySide6.QtCore import QEvent, QObject, QSize, QThread, Qt, QUrl, Signal
-from PySide6.QtGui import QCloseEvent, QDesktopServices
+from PySide6.QtCore import QEvent, QObject, QRect, QSize, QThread, Qt, QUrl, Signal
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
-    QFormLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -49,13 +48,26 @@ from bdo_music_composer.core.conversion_settings import (
     VELOCITY_MODE_OFF,
     VELOCITY_MODE_PRESERVE,
 )
+from bdo_music_composer.ui.floating_panel_qt import FloatingPanelDialog
 from bdo_music_composer.ui.i18n import LANGUAGE_CHOICES, tr, trf
+from bdo_music_composer.ui.home_welcome_qt import (
+    TELEMETRY_CONTENT,
+    TELEMETRY_EXCLUSIONS,
+    TELEMETRY_INSTALL_ID,
+    TELEMETRY_TITLE,
+    TIME_ZONE_LABEL,
+    TIME_ZONE_NOTE,
+    system_time_zone_label,
+)
 from bdo_music_composer.core.project_paths import GAME_ART_CACHE_DIR, USER_DATA_DIR
 from bdo_music_composer.ui.local_game_art_qt import (
     GameArtImportError,
     import_game_instrument_art,
 )
-from bdo_music_composer.ui.ui_controls import PillButton
+from bdo_music_composer.ui.page_transition_qt import NavigationCue, interface_motion_allowed
+from bdo_music_composer.ui.theme import hig_tokens as hig
+from bdo_music_composer.ui.theme.symbols import FluentSymbol, draw_symbol
+from bdo_music_composer.ui.ui_controls import ElidedCheckBox, PillButton
 from bdo_music_composer.ui.ui_notifications import show_global_toast
 
 
@@ -122,6 +134,7 @@ class SettingsHost(Protocol):
     audio_sources: dict[str, str]
     instrument_art_dir: str
     update_settings: dict[str, object]
+    usage_telemetry_preferences: dict[str, object] | None
 
     def check_for_updates(self) -> bool: ...
 
@@ -155,11 +168,17 @@ class GameArtImportWorker(QThread):
         else:
             self.succeeded.emit(report)
 
-class SettingsDialog(QDialog):
+class SettingsDialog(FloatingPanelDialog):
     def __init__(self, parent: SettingsHost) -> None:
         super().__init__(cast(QWidget, parent))
         self.game_art_worker: GameArtImportWorker | None = None
         self._game_art_pending_paz_root = ""
+        saved_usage = getattr(parent, "usage_telemetry_preferences", None)
+        if not isinstance(saved_usage, dict):
+            saved_usage = {}
+        enabled = saved_usage.get("enabled")
+        self._usage_enabled = enabled if isinstance(enabled, bool) else None
+        self.usage_telemetry_combo: QComboBox | None = None
         self.selected_paz_root = str(
             parent.audio_sources.get("paz_root", "") or ""
         )
@@ -167,31 +186,30 @@ class SettingsDialog(QDialog):
         self.setProperty("uiSurface", "utility")
         self.setWindowTitle(tr("设置"))
         self.setModal(True)
-        self.resize(920, 680)
-        self.setMinimumSize(760, 560)
+        self.resize(900, 620)
+        self.setMinimumSize(768, 560)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(1, 1, 1, 1)
         layout.setSpacing(0)
 
         header = QFrame()
         header.setObjectName("SettingsHeader")
         header.setProperty("uiRole", "dialogHeader")
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(24, 14, 24, 13)
-        header_layout.setSpacing(2)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(hig.SECTION_GAP, hig.ITEM_GAP, hig.PANEL_PADDING, hig.ITEM_GAP)
+        header_layout.setSpacing(hig.PANEL_PADDING)
         title = QLabel(tr("设置"))
         title.setObjectName("SettingsTitle")
         title.setProperty("uiRole", "dialogTitle")
-        subtitle = QLabel(
-            tr("导出、解析、试听与界面设置；保存后立即应用相关更改。")
-        )
-        self.settings_subtitle = subtitle
-        subtitle.setWordWrap(True)
-        subtitle.setObjectName("Muted")
-        subtitle.setProperty("uiRole", "dialogSubtitle")
-        header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
+        header_layout.addWidget(title, stretch=1)
+        close = PillButton("", "ghost", FluentSymbol.CLOSE)
+        close.setObjectName("FloatingPanelClose")
+        close.setFixedSize(hig.BUTTON_HEIGHT, hig.BUTTON_HEIGHT)
+        close.setAccessibleName(tr("关闭窗口"))
+        close.setToolTip(tr("关闭窗口"))
+        close.clicked.connect(self.reject)
+        header_layout.addWidget(close, alignment=Qt.AlignVCenter)
         layout.addWidget(header)
 
         content = QWidget()
@@ -201,10 +219,12 @@ class SettingsDialog(QDialog):
         content_layout.setSpacing(0)
         self.settings_nav = QListWidget()
         self.settings_nav.setObjectName("SettingsNav")
+        self.settings_nav.setAccessibleName(tr("设置"))
         self.settings_nav.setProperty("i18nTranslateItems", True)
         # Explicit geometry avoids native QListWidget metrics changing the
         # sidebar layout at different Windows scale factors and locales.
         self.settings_nav.setFixedWidth(184)
+        self.settings_nav.setIconSize(QSize(16, 16))
         self.settings_nav.setUniformItemSizes(True)
         self.settings_nav.setSpacing(0)
         self.settings_nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -223,30 +243,37 @@ class SettingsDialog(QDialog):
         update_scroll, update_page_layout = self._settings_page(
             "SettingsUpdateScroll", "SettingsUpdatePage"
         )
-        for label, page in (
-            (tr("通用与导出"), general_scroll),
-            (tr("MIDI 与力度"), midi_scroll),
-            (tr("音源与外观"), audio_scroll),
-            (tr("软件更新"), update_scroll),
+        privacy_scroll, self._privacy_page_layout = self._settings_page(
+            "SettingsPrivacyScroll", "SettingsPrivacyPage"
+        )
+        for label, symbol, page in (
+            (tr("通用与导出"), FluentSymbol.SETTINGS, general_scroll),
+            (tr("MIDI 与力度"), FluentSymbol.CURVE, midi_scroll),
+            (tr("音源与外观"), FluentSymbol.PLAY, audio_scroll),
+            (tr("软件更新"), FluentSymbol.REPEAT, update_scroll),
+            (tr("隐私"), FluentSymbol.INFO, privacy_scroll),
         ):
-            item = QListWidgetItem(label)
-            item.setSizeHint(QSize(0, 48))
+            icon = QIcon()
+            for size in (16, 32):
+                icon.addPixmap(draw_symbol(symbol, hig.SELECTION_TEXT, size))
+            item = QListWidgetItem(icon, label)
+            item.setSizeHint(QSize(0, 42))
             item.setTextAlignment(
                 int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             )
             self.settings_nav.addItem(item)
             self.settings_pages.addWidget(page)
-        self.settings_nav.currentRowChanged.connect(self.settings_pages.setCurrentIndex)
+        self._privacy_page_index = self.settings_pages.indexOf(privacy_scroll)
+        self._settings_motion = NavigationCue(self.settings_nav.viewport())
+        self.settings_nav.currentRowChanged.connect(self._select_settings_page)
+        self.settings_nav.currentRowChanged.connect(self._show_privacy_settings)
         self.settings_nav.setCurrentRow(0)
         content_layout.addWidget(self.settings_nav)
         content_layout.addWidget(self.settings_pages, stretch=1)
         layout.addWidget(content, stretch=1)
 
-        general, general_layout = self._section(
-            "基础导出",
-            "角色名会写入乐谱；BPM 与移调会在导出时应用。",
-        )
-        form = self._form_layout()
+        general, general_layout = self._section()
+        form = self._field_grid()
         general_layout.addLayout(form)
         general_page_layout.addWidget(general)
 
@@ -256,36 +283,29 @@ class SettingsDialog(QDialog):
             self.language.addItem(tr(label), code)
         language_index = self.language.findData(parent.language)
         self.language.setCurrentIndex(language_index if language_index >= 0 else 0)
-        form.addRow(tr("界面语言"), self.language)
+        self._add_field(form, "界面语言", self.language)
 
         self.char_name = QLineEdit(parent.char_name)
-        form.addRow(tr("写入角色名"), self.char_name)
+        self._add_field(form, "写入角色名", self.char_name)
 
         self.bpm_override = QSpinBox()
         self.bpm_override.setRange(0, BDO_BPM_MAX)
         self.bpm_override.setSpecialValueText(tr("使用 MIDI"))
         self.bpm_override.setValue(parent.bpm_override or 0)
-        form.addRow(tr("全局 BPM（高级）"), self.bpm_override)
+        self._add_field(form, "全局 BPM", self.bpm_override)
 
         self.transpose = QSpinBox()
         self.transpose.setRange(-48, 48)
         self.transpose.setSuffix(tr(" 半音"))
         self.transpose.setValue(parent.transpose)
-        form.addRow(tr("移调"), self.transpose)
+        self._add_field(form, "移调", self.transpose)
 
-        output, output_layout = self._section(
-            "输出目录",
-            "分别设置导出保存位置和游戏曲谱安装位置。",
-        )
-        general_page_layout.addWidget(output)
+        self._add_form_heading(form, "输出目录")
         output_row = QHBoxLayout()
-        output_row.setContentsMargins(0, 0, 0, 0)
         output_row.setSpacing(6)
         self.output_dir = QLineEdit(parent.output_dir_path)
         self.output_dir.setObjectName("OutputDirectoryEdit")
         self.output_dir.setPlaceholderText(tr("输出目录"))
-        self.output_dir.setToolTip(tr("完整路径；文本过长时可横向滚动查看"))
-        output_row.addWidget(self.output_dir, stretch=1)
         browse_output = PillButton(tr("选择"), "secondary")
         browse_output.setObjectName("BrowseOutputDirectoryButton")
         browse_output.clicked.connect(self._browse_output_folder)
@@ -294,18 +314,13 @@ class SettingsDialog(QDialog):
         open_output.setObjectName("OpenOutputDirectoryButton")
         open_output.clicked.connect(self._open_output_folder)
         output_row.addWidget(open_output)
-        output_layout.addLayout(
-            self._labeled_row("导出保存目录", output_row)
-        )
+        self._add_field(form, "导出保存目录", self.output_dir, actions=output_row)
 
         game_music_row = QHBoxLayout()
-        game_music_row.setContentsMargins(0, 0, 0, 0)
         game_music_row.setSpacing(6)
         self.game_music_dir = QLineEdit(parent.game_music_dir_path)
         self.game_music_dir.setObjectName("GameMusicDirectoryEdit")
         self.game_music_dir.setPlaceholderText(tr("游戏曲谱目录"))
-        self.game_music_dir.setToolTip(tr("完整路径；文本过长时可横向滚动查看"))
-        game_music_row.addWidget(self.game_music_dir, stretch=1)
         browse_game_music = PillButton(tr("选择"), "secondary")
         browse_game_music.setObjectName("BrowseGameMusicDirectoryButton")
         browse_game_music.clicked.connect(self._browse_game_music_folder)
@@ -314,14 +329,13 @@ class SettingsDialog(QDialog):
         open_game_music.setObjectName("OpenGameMusicDirectoryButton")
         open_game_music.clicked.connect(self._open_game_music_folder)
         game_music_row.addWidget(open_game_music)
-        output_layout.addLayout(
-            self._labeled_row("游戏曲谱目录", game_music_row)
-        )
+        self._add_field(form, "游戏曲谱目录", self.game_music_dir, actions=game_music_row)
 
-        owner, owner_layout = self._section(
-            "游戏编辑权限",
-            "选择一份游戏内保存的曲谱，读取角色名和 Owner ID。",
-        )
+        owner, owner_layout = self._section("游戏编辑权限")
+        self.settings_subtitle = QLabel(tr("选择一份游戏内保存的曲谱，读取角色名和 Owner ID。"))
+        self.settings_subtitle.setObjectName("Muted")
+        self.settings_subtitle.setWordWrap(True)
+        owner_layout.addWidget(self.settings_subtitle)
         general_page_layout.addWidget(owner)
         self.owner_id = parent.owner_id
         self.owner_identity_changed = False
@@ -349,11 +363,11 @@ class SettingsDialog(QDialog):
             "这两项仅用于下一次 MIDI 导入；不会重新解析或覆盖当前工程。",
         )
         midi_page_layout.addWidget(parsing)
-        self.apply_sustain = QCheckBox(tr("读取并展开 MIDI sustain 踏板"))
+        self.apply_sustain = ElidedCheckBox(tr("读取并展开 MIDI sustain 踏板"))
         self.apply_sustain.setChecked(parent.apply_sustain)
         parsing_layout.addWidget(self.apply_sustain)
 
-        self.flatten_tempo = QCheckBox(tr("忽略中途 tempo 变化，按主 BPM 拉平"))
+        self.flatten_tempo = ElidedCheckBox(tr("忽略中途 tempo 变化，按主 BPM 拉平"))
         self.flatten_tempo.setChecked(parent.flatten_tempo)
         parsing_layout.addWidget(self.flatten_tempo)
 
@@ -365,8 +379,8 @@ class SettingsDialog(QDialog):
         modes = QFrame()
         modes.setObjectName("SettingsModeRow")
         modes_layout = QGridLayout(modes)
-        modes_layout.setContentsMargins(0, 0, 0, 0)
-        modes_layout.setHorizontalSpacing(18)
+        modes_layout.setContentsMargins(0, hig.CONTROL_GAP, 0, hig.CONTROL_GAP)
+        modes_layout.setHorizontalSpacing(0)
         modes_layout.setVerticalSpacing(10)
         for column in range(3):
             modes_layout.setColumnStretch(column, 1)
@@ -387,7 +401,8 @@ class SettingsDialog(QDialog):
                 )
             )
             radio.toggled.connect(self._sync_velocity_controls)
-            modes_layout.addWidget(radio, index // 3, index % 3)
+            span = 2 if mode == VELOCITY_MODE_PRESERVE else 1
+            modes_layout.addWidget(radio, index // 3, index % 3, 1, span)
         vel_layout.addWidget(modes)
 
         self.vel_step_base = QSpinBox()
@@ -404,7 +419,9 @@ class SettingsDialog(QDialog):
         step_row.addWidget(QLabel(tr("步长")))
         step_row.addWidget(self.vel_step)
         self.vel_step_row = QWidget()
-        self.vel_step_row.setLayout(self._labeled_row("阶梯参数", step_row))
+        self.vel_step_row.setLayout(
+            self._labeled_row("阶梯参数", step_row, self.vel_step_base)
+        )
         vel_layout.addWidget(self.vel_step_row)
 
         self.vel_min = QSpinBox()
@@ -419,7 +436,9 @@ class SettingsDialog(QDialog):
         range_row.addWidget(QLabel(tr("最大")))
         range_row.addWidget(self.vel_max)
         self.vel_range_row = QWidget()
-        self.vel_range_row.setLayout(self._labeled_row("重映射范围", range_row))
+        self.vel_range_row.setLayout(
+            self._labeled_row("重映射范围", range_row, self.vel_min)
+        )
         vel_layout.addWidget(self.vel_range_row)
 
         self.vel_floor = QSpinBox()
@@ -429,7 +448,7 @@ class SettingsDialog(QDialog):
         floor_row.addWidget(self.vel_floor)
         floor_row.addStretch(1)
         self.vel_floor_row = QWidget()
-        self.vel_floor_row.setLayout(self._labeled_row("抬底值", floor_row))
+        self.vel_floor_row.setLayout(self._labeled_row("抬底值", floor_row, self.vel_floor))
         vel_layout.addWidget(self.vel_floor_row)
 
         audio, audio_layout = self._section(
@@ -437,6 +456,8 @@ class SettingsDialog(QDialog):
             "切换或锁定试听音源；仅用于本机试听，不会写入曲谱，也不会上传。",
         )
         audio_page_layout.addWidget(audio)
+        audio_form = self._field_grid()
+        audio_layout.addLayout(audio_form)
         self.preview_mode = QComboBox()
         self.preview_mode.setProperty("i18nSkipItems", True)
         for label, mode in (
@@ -454,12 +475,7 @@ class SettingsDialog(QDialog):
         }
         preview_mode_index = self.preview_mode.findData(self._audio_source_mode)
         self.preview_mode.setCurrentIndex(max(0, preview_mode_index))
-        preview_mode_row = QHBoxLayout()
-        preview_mode_row.setContentsMargins(0, 0, 0, 0)
-        preview_mode_row.addWidget(self.preview_mode)
-        audio_layout.addLayout(
-            self._labeled_row("试听音源", preview_mode_row)
-        )
+        self._add_field(audio_form, "试听音源", self.preview_mode)
         self.audio_source = QLineEdit(
             self._audio_source_values.get(self._audio_source_mode, "")
         )
@@ -467,32 +483,34 @@ class SettingsDialog(QDialog):
         self.audio_source.setReadOnly(True)
         self.audio_source.setPlaceholderText(tr("未选择"))
         audio_source_layout = QHBoxLayout()
-        audio_source_layout.setContentsMargins(0, 0, 0, 0)
         audio_source_layout.setSpacing(6)
-        audio_source_layout.addWidget(self.audio_source, stretch=1)
         self.sample_pack_button = PillButton(tr("选择音源包"), "secondary")
         self.sample_pack_button.setToolTip(tr("选择 .bdosamples 音源包"))
         self.sample_pack_button.clicked.connect(self._browse_sample_pack)
         audio_source_layout.addWidget(self.sample_pack_button)
         self.clear_audio_button = PillButton(tr("清除"), "ghost")
         self.clear_audio_button.clicked.connect(self.audio_source.clear)
+        self.clear_audio_button.setEnabled(bool(self.audio_source.text()))
+        self.audio_source.textChanged.connect(
+            lambda path: self.clear_audio_button.setEnabled(bool(path))
+        )
         audio_source_layout.addWidget(self.clear_audio_button)
-        audio_layout.addLayout(
-            self._labeled_row("音源包路径", audio_source_layout)
+        self.audio_source_label = self._add_field(
+            audio_form, "音源包路径", self.audio_source, actions=audio_source_layout,
+            actions_below=True,
         )
         self.preview_mode.currentIndexChanged.connect(
             self._preview_source_mode_changed
         )
         self._sync_audio_source_controls()
 
+        self._add_form_heading(audio_form, "轨道背景")
         self.instrument_art_dir = QLineEdit(parent.instrument_art_dir)
         self.instrument_art_dir.setObjectName("InstrumentArtDirectoryEdit")
         self.instrument_art_dir.setReadOnly(True)
         self.instrument_art_dir.setPlaceholderText(tr("内置原创图标"))
         art_source_layout = QHBoxLayout()
-        art_source_layout.setContentsMargins(0, 0, 0, 0)
         art_source_layout.setSpacing(6)
-        art_source_layout.addWidget(self.instrument_art_dir, stretch=1)
         art_folder_button = PillButton(tr("轨道背景"), "secondary")
         art_folder_button.setToolTip(
             tr("选择本地乐器图片目录；未设置时使用内置原创图标")
@@ -507,10 +525,22 @@ class SettingsDialog(QDialog):
         art_source_layout.addWidget(self.game_art_button)
         clear_art_button = PillButton(tr("清除"), "ghost")
         clear_art_button.clicked.connect(self.instrument_art_dir.clear)
-        art_source_layout.addWidget(clear_art_button)
-        audio_layout.addLayout(
-            self._labeled_row("乐器图像", art_source_layout)
+        clear_art_button.setEnabled(bool(self.instrument_art_dir.text()))
+        self.instrument_art_dir.textChanged.connect(
+            lambda path: clear_art_button.setEnabled(bool(path))
         )
+        art_source_layout.addWidget(clear_art_button)
+        self._add_field(
+            audio_form, "乐器图像", self.instrument_art_dir, actions=art_source_layout,
+            actions_below=True,
+        )
+
+        appearance, appearance_layout = self._section("外观")
+        self.interface_motion = QCheckBox(tr("界面切换动效"))
+        self.interface_motion.setChecked(interface_motion_allowed(parent))
+        self.interface_motion.setToolTip(tr("为页面切换和浮窗打开添加短缓动"))
+        appearance_layout.addWidget(self.interface_motion)
+        audio_page_layout.addWidget(appearance)
 
         updates, updates_layout = self._section(
             "无感更新",
@@ -522,7 +552,7 @@ class SettingsDialog(QDialog):
             parent.update_settings.get("enabled", True) is not False
         )
         updates_layout.addWidget(self.update_enabled)
-        self.update_auto_download = QCheckBox(
+        self.update_auto_download = ElidedCheckBox(
             tr("发现新版本后在后台自动下载")
         )
         self.update_auto_download.setChecked(
@@ -536,6 +566,8 @@ class SettingsDialog(QDialog):
         update_source_row.setContentsMargins(0, 0, 0, 0)
         self.update_source = QComboBox()
         self.update_source.setProperty("i18nSkipItems", True)
+        self.update_source.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.update_source.setMinimumContentsLength(14)
         for label, source in (
             ("自动选择（优先可用镜像）", "auto"),
             ("Gitee 国内镜像", "gitee"),
@@ -555,7 +587,7 @@ class SettingsDialog(QDialog):
         )
         update_source_row.addWidget(check_update_button)
         updates_layout.addLayout(
-            self._labeled_row("更新来源", update_source_row)
+            self._labeled_row("更新来源", update_source_row, self.update_source)
         )
         self.update_status = QLabel()
         self.update_status.setObjectName("SettingsUpdateStatus")
@@ -583,11 +615,91 @@ class SettingsDialog(QDialog):
         self.settings_footer.setObjectName("SettingsFooter")
         self.settings_footer.setProperty("uiRole", "dialogFooter")
         settings_footer_layout = QHBoxLayout(self.settings_footer)
-        settings_footer_layout.setContentsMargins(24, 10, 24, 10)
+        settings_footer_layout.setContentsMargins(
+            hig.SECTION_GAP, hig.ITEM_GAP, hig.SECTION_GAP, hig.ITEM_GAP,
+        )
         settings_footer_layout.setSpacing(0)
         settings_footer_layout.addWidget(self.settings_buttons)
         layout.addWidget(self.settings_footer)
         self._sync_velocity_controls()
+        self.settings_nav.setFocus()
+
+    def _show_privacy_settings(self, index: int) -> None:
+        if index != self._privacy_page_index or self.usage_telemetry_combo is not None:
+            return
+        section, layout = self._section(TELEMETRY_TITLE, TELEMETRY_CONTENT)
+        for text in (
+            TELEMETRY_INSTALL_ID,
+            TELEMETRY_EXCLUSIONS,
+            "使用感受仅在自愿填写后随统计分享。",
+        ):
+            note = QLabel(tr(text))
+            note.setObjectName("Muted")
+            note.setWordWrap(True)
+            layout.addWidget(note)
+
+        form = self._field_grid()
+        layout.addLayout(form)
+        self.usage_telemetry_combo = QComboBox()
+        self.usage_telemetry_combo.setAccessibleName(tr("分享使用统计"))
+        if self._usage_enabled is None:
+            self.usage_telemetry_combo.addItem(tr("尚未选择"), None)
+        self.usage_telemetry_combo.addItem(tr("不分享"), False)
+        self.usage_telemetry_combo.addItem(tr("允许分享"), True)
+        self.usage_telemetry_combo.setCurrentIndex(self.usage_telemetry_combo.findData(self._usage_enabled))
+        self._add_field(form, "分享使用统计", self.usage_telemetry_combo)
+
+        time_zone = QLabel(system_time_zone_label())
+        time_zone.setObjectName("UsageSystemTimeZone")
+        time_zone.setProperty("i18nSkipText", True)
+        time_zone.setWordWrap(True)
+        time_zone.setToolTip(tr(TIME_ZONE_NOTE))
+        time_zone.setAccessibleDescription(tr(TIME_ZONE_NOTE))
+        self._add_field(form, TIME_ZONE_LABEL, time_zone)
+
+        self._usage_rating_combo = QComboBox()
+        rating_label = "是否帮助你编曲或作曲？（可选）"
+        self._usage_rating_combo.setAccessibleName(tr(rating_label))
+        for caption, value in (
+            ("不填写", ""), ("觉得有帮助", "helpful"), ("一般", "neutral"), ("没有帮助", "not_helpful"),
+        ):
+            self._usage_rating_combo.addItem(tr(caption), value)
+        self._add_field(form, rating_label, self._usage_rating_combo)
+        self.usage_telemetry_combo.currentIndexChanged.connect(self._sync_usage_privacy_controls)
+        self._sync_usage_privacy_controls()
+        self._privacy_page_layout.addWidget(section)
+
+    def _select_settings_page(self, index: int) -> None:
+        previous = self.settings_pages.currentIndex()
+        self.settings_pages.setCurrentIndex(index)
+        if previous == index or min(previous, index) < 0:
+            return
+
+        def marker(row: int) -> QRect:
+            rect = self.settings_nav.visualItemRect(self.settings_nav.item(row))
+            return QRect(rect.x() + 9, rect.y() + 10, 2, max(0, rect.height() - 20))
+
+        self._settings_motion.play(marker(previous), marker(index))
+
+    def _sync_usage_privacy_controls(self) -> None:
+        combo = self.usage_telemetry_combo
+        sharing = combo is not None and combo.currentData() is True
+        self._usage_rating_combo.setEnabled(sharing)
+
+    def telemetry_values(self) -> dict[str, object] | None:
+        """Return updated consent for the host to persist after Save."""
+        combo = self.usage_telemetry_combo
+        if combo is None or not isinstance(enabled := combo.currentData(), bool):
+            return None
+        if enabled is self._usage_enabled:
+            return None
+        return {"enabled": enabled, "server": ""}
+
+    def telemetry_usefulness(self) -> str:
+        """Return a voluntary rating for an enabled reporting session."""
+        if self.usage_telemetry_combo is None or self.usage_telemetry_combo.currentData() is not True:
+            return ""
+        return str(self._usage_rating_combo.currentData() or "")
 
     @staticmethod
     def _settings_page(
@@ -596,67 +708,105 @@ class SettingsDialog(QDialog):
     ) -> tuple[QScrollArea, QVBoxLayout]:
         scroll = QScrollArea()
         scroll.setObjectName(scroll_name)
+        scroll.setProperty("uiRole", "settingsScroll")
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         page = QWidget()
         page.setObjectName(page_name)
+        page.setProperty("uiRole", "settingsPage")
         page_layout = QVBoxLayout(page)
-        page_layout.setContentsMargins(22, 4, 24, 12)
-        page_layout.setSpacing(0)
+        page_layout.setContentsMargins(hig.ITEM_GAP, hig.ITEM_GAP, hig.ITEM_GAP, hig.PANEL_PADDING)
+        page_layout.setSpacing(hig.GROUP_GAP)
         page_layout.setAlignment(Qt.AlignTop)
         scroll.setWidget(page)
         return scroll, page_layout
 
     @staticmethod
-    def _section(title_text: str, description: str) -> tuple[QFrame, QVBoxLayout]:
+    def _section(title_text: str = "", description: str = "") -> tuple[QFrame, QVBoxLayout]:
         section = QFrame()
         section.setObjectName("SettingsSection")
         section.setProperty("uiRole", "settingsSection")
         layout = QVBoxLayout(section)
-        # Three general-page sections must fit at the normal 920x680 dialog
-        # size. Small displays still use the page's vertical scrollbar.
-        layout.setContentsMargins(0, 12, 0, 14)
-        layout.setSpacing(6)
-        # Grid rows take the height of their taller neighbour; keep each
-        # section's own controls anchored directly below its description.
+        layout.setContentsMargins(hig.PANEL_PADDING, hig.ITEM_GAP, hig.PANEL_PADDING, hig.ITEM_GAP)
+        layout.setSpacing(hig.ITEM_GAP)
         layout.setAlignment(Qt.AlignTop)
-        title = QLabel(tr(title_text))
-        title.setObjectName("SettingsSectionTitle")
-        title.setProperty("uiRole", "sectionTitle")
-        detail = QLabel(tr(description))
-        detail.setObjectName("Muted")
-        detail.setWordWrap(True)
-        layout.addWidget(title)
-        layout.addWidget(detail)
+        if title_text:
+            layout.addWidget(SettingsDialog._section_heading(title_text))
+        if description:
+            detail = QLabel(tr(description))
+            detail.setObjectName("Muted")
+            detail.setWordWrap(True)
+            layout.addWidget(detail)
         return section, layout
 
     @staticmethod
-    def _form_layout() -> QFormLayout:
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form.setFormAlignment(Qt.AlignTop)
-        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    def _section_heading(title_text: str) -> QLabel:
+        title = QLabel(tr(title_text))
+        title.setObjectName("SettingsSectionTitle")
+        title.setProperty("uiRole", "sectionTitle")
+        return title
+
+    @staticmethod
+    def _field_grid() -> QGridLayout:
+        form = QGridLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setColumnStretch(1, 1)
         form.setHorizontalSpacing(14)
         form.setVerticalSpacing(9)
         return form
 
     @staticmethod
-    def _labeled_row(label_text: str, row: QHBoxLayout) -> QHBoxLayout:
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(14)
+    def _add_form_heading(form: QGridLayout, title_text: str) -> None:
+        row = form.rowCount()
+        form.setRowMinimumHeight(row, hig.ITEM_GAP)
+        form.addWidget(SettingsDialog._section_heading(title_text), row + 1, 0, 1, -1)
+
+    @staticmethod
+    def _add_field(
+        form: QGridLayout, label_text: str, field: QWidget, *,
+        actions: QHBoxLayout | None = None,
+        actions_below: bool = False,
+    ) -> QLabel:
+        row = form.rowCount() if form.count() else 0
+        label = SettingsDialog._field_label(label_text, field)
+        form.addWidget(label, row, 0)
+        inline_actions = actions is not None and not actions_below
+        form.addWidget(field, row, 1, 1, 1 if inline_actions else -1)
+        if actions is not None:
+            actions.setContentsMargins(0, 0, 0, 0)
+            actions.insertStretch(0)
+            if actions_below:
+                form.addLayout(actions, row + 1, 1, 1, -1)
+            else:
+                form.addLayout(actions, row, 2)
+            if isinstance(field, QLineEdit):
+                # Paths are user data. The tooltip keeps the full value readable.
+                field.setProperty("i18nSkipToolTip", True)
+                field.setToolTip(field.text())
+                field.textChanged.connect(field.setToolTip)
+                field.setCursorPosition(0)
+        return label
+
+    @staticmethod
+    def _field_label(label_text: str, field: QWidget) -> QLabel:
         label = QLabel(tr(label_text))
         label.setObjectName("SettingsFieldLabel")
-        # Independent section layouts otherwise choose different label widths
-        # after a locale switch, making related path fields visibly jump.
+        label.setBuddy(field)
+        label.setWordWrap(True)
         label.setFixedWidth(SETTINGS_FIELD_LABEL_WIDTH)
         label.setSizePolicy(
             QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Preferred,
         )
-        label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        layout.addWidget(label)
+        label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        return label
+
+    @staticmethod
+    def _labeled_row(label_text: str, row: QHBoxLayout, field: QWidget) -> QHBoxLayout:
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+        layout.addWidget(SettingsDialog._field_label(label_text, field))
         layout.addLayout(row, stretch=1)
         return layout
 
@@ -748,10 +898,11 @@ class SettingsDialog(QDialog):
 
     def _sync_audio_source_controls(self) -> None:
         external = self._audio_source_mode == "pack"
-        self.audio_source.setEnabled(external)
-        self.sample_pack_button.setEnabled(external)
-        self.clear_audio_button.setEnabled(external)
-        self.sample_pack_button.setText(tr("选择音源包"))
+        for widget in (
+            self.audio_source_label, self.audio_source,
+            self.sample_pack_button, self.clear_audio_button,
+        ):
+            widget.setVisible(external)
 
     def audio_source_values(self) -> dict[str, str]:
         """Return both remembered pack selections, including the visible edit."""

@@ -7,6 +7,8 @@ from collections.abc import Callable
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 
+from bdo_music_composer.ui.theme import hig_tokens as hig
+
 
 def paint_empty_score_guidance(
     painter: QPainter,
@@ -26,7 +28,8 @@ def paint_empty_score_guidance(
     painter.save()
     painter.setBrush(QColor(20, 18, 16, 210))
     painter.setPen(QPen(QColor("#6f634d"), 1))
-    painter.drawRoundedRect(hint_rect, 8.0, 8.0)
+    radius = hig.CONTROL_RADIUS
+    painter.drawRoundedRect(hint_rect, radius, radius)
     painter.setPen(QColor("#f0d887"))
     painter.drawText(
         hint_rect.adjusted(16.0, 8.0, -16.0, -34.0),

@@ -20,6 +20,14 @@ class BdoDecodeError(BdoCodecError):
     """The input cannot be safely decoded as a BDO v9 score."""
 
 
+class BdoUnsupportedVersionError(BdoDecodeError):
+    """A score header declares a version this decoder does not support."""
+
+    def __init__(self, version: int) -> None:
+        self.version = version
+        super().__init__(f"unsupported BDO score version {version}; expected {BDO_VERSION}")
+
+
 class BdoEncodeError(BdoCodecError):
     """The document cannot be safely encoded as a BDO v9 score."""
 
@@ -140,7 +148,7 @@ class CodecDiffEntry:
 
 __all__ = [
     "BDO_VERSION", "HEADER_SIZE", "NAME_FIELD_SIZE", "MAX_NOTES_PER_TRACK",
-    "BdoCodecError", "BdoDecodeError", "BdoEncodeError", "UnsafeOpaqueDataError",
+    "BdoCodecError", "BdoDecodeError", "BdoUnsupportedVersionError", "BdoEncodeError", "UnsafeOpaqueDataError",
     "BdoTrackSettings", "BdoNote", "BdoTrack", "BdoInstrumentGroup", "BdoHeader",
     "BdoDocument", "CodecIssue", "CodecDiffEntry",
 ]

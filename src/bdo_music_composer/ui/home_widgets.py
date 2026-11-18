@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
+    QFocusEvent,
     QFont,
     QFontMetrics,
+    QIcon,
     QLinearGradient,
+    QMouseEvent,
     QPainter,
     QPen,
     QPixmap,
@@ -23,7 +26,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStyle,
     QStyledItemDelegate,
+    QStyleOptionButton,
     QStyleOptionViewItem,
+    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
@@ -34,25 +39,30 @@ from bdo_music_composer.app.application_metadata import (
 from bdo_music_composer.ui.editor.bdo_instrument_lane_art_qt import InstrumentLaneArtwork
 from bdo_midi import BDO_ENSEMBLE_PLAYER_LIMIT
 from bdo_music_composer.ui.i18n import tr, trf
+from bdo_music_composer.ui.theme import hig_tokens as hig
+from bdo_music_composer.ui.theme.fluent_theme import FluentSymbol, set_fluent_symbol
+from bdo_music_composer.ui.theme.fonts_qt import ThemeTitle
+from bdo_music_composer.ui.theme.symbols import draw_symbol
 from bdo_music_composer.core.project_paths import ASSETS_DIR
 
 
 HOME_BACKGROUND_IMAGE = (
-    ASSETS_DIR / "ui" / "home" / "home_moonlit_atelier_v3.png"
+    ASSETS_DIR / "ui" / "home" / "home_moonlit_atelier_v3.webp"
 )
 SHAI_ENSEMBLE_MARK_IMAGE = ASSETS_DIR / "icons" / "shai_ensemble_mark.png"
+APP_ICON_IMAGE = ASSETS_DIR / "icons" / "app_icon.png"
 HOME_INSTRUMENT_IDS_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 
 
 class HomeLibrarySurface(QFrame):
-    """One quiet material layer for the complete home library."""
+    """Align recent projects and game scores with the command column."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("HomeLibrarySurface")
         self.content_layout = QVBoxLayout(self)
-        self.content_layout.setContentsMargins(14, 12, 14, 10)
-        self.content_layout.setSpacing(10)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(hig.ITEM_GAP)
 
 
 class HomeHero(QWidget):
@@ -62,27 +72,58 @@ class HomeHero(QWidget):
         super().__init__(parent)
         self.setObjectName("HomeHero")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 0, 14, 0)
-        layout.setSpacing(2)
-        title = QLabel(tr("继续创作"))
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(hig.ITEM_GAP)
+        title = ThemeTitle(tr("开始创作"))
         title.setObjectName("HomeTitle")
-        subtitle = QLabel(tr("从最近工程继续，或开始一个新的编曲项目"))
-        subtitle.setObjectName("HomeSubtitle")
-        subtitle.setWordWrap(True)
         layout.addWidget(title)
+        subtitle = QLabel(tr("编排和试听多轨 MIDI，编辑音符与力度，导出黑色沙漠曲谱。"))
+        subtitle.setObjectName("HomeHeroSubtitle")
+        subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
 
 class HomeLibraryTabs(QFrame):
-    """Fixed-height host that makes the two library tabs read as one control."""
+    """Align both library tabs with the search and refresh controls."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("HomeLibraryTabs")
-        self.setFixedHeight(36)
+        self.setFixedHeight(hig.BUTTON_HEIGHT)
         self.content_layout = QHBoxLayout(self)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(0)
+        self.content_layout.setSpacing(hig.CONTROL_GAP)
+
+
+class HomeListWidget(QListWidget):
+    """Prefer the measured preview height and scroll in smaller windows."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setMaximumHeight(320)
+        self.setVerticalScrollMode(self.ScrollMode.ScrollPerPixel)
+        self.setResizeMode(self.ResizeMode.Adjust)
+
+    def sizeHint(self) -> QSize:
+        hint = super().sizeHint()
+        hint.setHeight(self.maximumHeight())
+        return hint
+
+    def set_preview_height(self, height: int) -> None:
+        self.setMinimumHeight(min(56, height))
+        self.setMaximumHeight(height)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            item = self.itemAt(event.position().toPoint())
+            can_activate = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+            if item is not None and (item.flags() & can_activate) == can_activate:
+                # The first double-click must open even when Qt has no current row.
+                self.setCurrentItem(item)
+                event.accept()
+                self.itemActivated.emit(item)
+                return
+        super().mouseDoubleClickEvent(event)
 
 
 class HomeFooter(QWidget):
@@ -99,8 +140,8 @@ class HomeFooter(QWidget):
         self.version = str(version)
         self.setObjectName("HomeFooter")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(2, 7, 2, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, hig.ITEM_GAP, 0, 0)
+        layout.setSpacing(hig.ITEM_GAP)
         self.local_badge = QLabel()
         self.local_badge.setObjectName("HomeLocalBadge")
         self.local_badge.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -176,7 +217,8 @@ class HomeIdentityBadge(QPushButton):
                 else QColor(35, 33, 29, 176)
             )
             painter.setPen(QPen(QColor("#5b4c36"), 1))
-            painter.drawRoundedRect(bounds, 5.0, 5.0)
+            radius = hig.CONTROL_RADIUS
+            painter.drawRoundedRect(bounds, radius, radius)
 
         # A compact anonymous avatar makes the direct identity action clear
         # without exposing the character name on the home surface.
@@ -222,31 +264,40 @@ class HomeIdentityBadge(QPushButton):
 
 
 class EnsembleCapacityBadge(QPushButton):
-    """Toolbar logo carrying Owner-ID state and quiet ensemble context."""
+    """About button with the current score's ensemble context in its description."""
 
-    def __init__(
-        self,
-        icon_path: Path = SHAI_ENSEMBLE_MARK_IMAGE,
-        parent: QWidget | None = None,
-    ) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("EnsembleCapacityBadge")
-        self.setFixedSize(36, 36)
+        self.setFixedSize(hig.LOGO_BUTTON_SIZE, hig.LOGO_BUTTON_SIZE)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFlat(True)
+        set_fluent_symbol(self, FluentSymbol.COMPOSER)
+        self._keyboard_focus = False
+        self._focus_icon = QIcon()
+        for size in (16, 24, 32, 48):
+            self._focus_icon.addPixmap(draw_symbol(FluentSymbol.COMPOSER, hig.FOCUS, size))
         self._player_count = 0
-        self._owner_id_bound = False
-        self.setProperty("ownerIdMissing", True)
         self._description_override = ""
-        source = QPixmap(str(icon_path))
-        self._icon = source.scaled(
-            30,
-            30,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
-        ) if not source.isNull() else QPixmap()
         self._refresh_description()
+
+    def focusInEvent(self, event: QFocusEvent) -> None:
+        if event.reason() not in (Qt.ActiveWindowFocusReason, Qt.PopupFocusReason):
+            self._keyboard_focus = event.reason() in (
+                Qt.TabFocusReason, Qt.BacktabFocusReason, Qt.ShortcutFocusReason,
+            )
+        super().focusInEvent(event)
+
+    def paintEvent(self, event) -> None:
+        if not (self.hasFocus() and self._keyboard_focus):
+            super().paintEvent(event)
+            return
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        option.icon = self._focus_icon
+        painter = QStylePainter(self)
+        painter.drawControl(QStyle.CE_PushButton, option)
 
     @property
     def player_count(self) -> int:
@@ -271,16 +322,6 @@ class EnsembleCapacityBadge(QPushButton):
         self._player_count = normalized
         self._description_override = normalized_description
         self._refresh_description()
-        self.update()
-
-    def set_owner_id(self, owner_id: int) -> None:
-        bound = bool(owner_id)
-        if bound == self._owner_id_bound:
-            return
-        self._owner_id_bound = bound
-        self.setProperty("ownerIdMissing", not bound)
-        self._refresh_description()
-        self.update()
 
     def _refresh_description(self) -> None:
         if self._description_override:
@@ -299,124 +340,119 @@ class EnsembleCapacityBadge(QPushButton):
                 count=self._player_count,
                 limit=BDO_ENSEMBLE_PLAYER_LIMIT,
             )
-        owner_description = tr(
-            "Owner ID 已绑定；点击 Logo 可更改"
-            if self._owner_id_bound
-            else "Owner ID 未设置；点击 Logo 快速设置"
-        )
-        self.setToolTip(f"{owner_description}\n{description}")
-        self.setAccessibleName(tr("Owner ID 快捷设置"))
-        self.setAccessibleDescription(f"{owner_description}。{description}")
+        about = tr("关于 BDO Music Composer")
+        self.setToolTip(about)
+        self.setAccessibleName(about)
+        self.setAccessibleDescription(description)
 
     def retranslate_dynamic_content(self) -> None:
         self._refresh_description()
 
-    def paintEvent(self, event) -> None:
-        del event
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        if not self._icon.isNull():
-            painter.save()
-            painter.setOpacity(0.9)
-            painter.drawPixmap(3, 3, self._icon)
-            painter.restore()
-
-        # Owner identity is carried by the logo itself, so the state remains
-        # available on both home and editor pages without another home widget.
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(
-            QColor("#8ead77")
-            if self._owner_id_bound
-            else QColor("#777777")
-        )
-        painter.drawEllipse(QRectF(27.0, 26.0, 6.0, 6.0))
-
 
 class HomeBackdrop(QFrame):
-    """Cached full-bleed home artwork with fixed readability gradients."""
+    """An inset portrait scene set against the same matte as the home page."""
 
     def __init__(self, image_path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("HomeShell")
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         self._source = QPixmap(str(image_path))
         self._cover = QPixmap()
-        self._refresh_cover()
+        self._cover_dpr = 0.0
+        self._art_rect = self._artwork_rect()
+        self._resize_timer = QTimer(self, singleShot=True, interval=72)
+        self._resize_timer.timeout.connect(self._refresh_cover)
 
     @property
     def has_artwork(self) -> bool:
         return not self._source.isNull()
 
+    def _artwork_rect(self) -> QRect:
+        side = min(hig.SECTION_GAP, self.width() // 12)
+        vertical = min(hig.PANEL_PADDING, self.height() // 12)
+        matte = self.rect().adjusted(side, vertical, -side, -vertical)
+        if matte.isEmpty():
+            return QRect()
+        # Keep both the scroll and the open score visible in wide, short windows.
+        art_width = min(matte.width(), round(matte.height() * 0.94))
+        return QRect(
+            matte.x() + (matte.width() - art_width) // 2,
+            matte.y(),
+            art_width,
+            matte.height(),
+        )
+
     def _refresh_cover(self) -> None:
-        if self._source.isNull() or self.width() <= 0 or self.height() <= 0:
+        self._resize_timer.stop()
+        self._cover_dpr = self.devicePixelRatioF()
+        if self._source.isNull() or self._art_rect.isEmpty():
             self._cover = QPixmap()
             return
-        self._cover = self._source.scaled(
-            self.size(),
+        view = self._art_rect.size() * self._cover_dpr
+        scaled = self._source.scaled(
+            view,
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
+        source_x = max(0, scaled.width() - view.width())
+        source_y = max(0, round((scaled.height() - view.height()) * 0.56))
+        rect = QRect(QPoint(), self._art_rect.size())
+        canvas = QColor(hig.CANVAS)
+        self._cover = QPixmap(view)
+        self._cover.setDevicePixelRatio(self._cover_dpr)
+        self._cover.fill(canvas)
+        with QPainter(self._cover) as painter:
+            painter.drawPixmap(rect, scaled, QRect(source_x, source_y, view.width(), view.height()))
+            self._paint_feathered_edges(painter, QRectF(rect), canvas)
+        self.update()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._refresh_cover()
+        self._art_rect = self._artwork_rect()
+        if self._cover.isNull() or not event.oldSize().isValid():
+            self._refresh_cover()
+        else:
+            # Reuse the last composited crop while the native resize grip is
+            # moving. The expensive smooth scale runs once per settled size.
+            self._resize_timer.start()
 
     def paintEvent(self, event) -> None:
         del event
+        if self.devicePixelRatioF() != self._cover_dpr:
+            self._refresh_cover()
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("#111214"))
+        painter.fillRect(self.rect(), QColor(hig.CANVAS))
         if not self._cover.isNull():
-            # Anchor the crop to the right so the character remains visible at
-            # every supported window aspect ratio.
-            source_x = max(0, self._cover.width() - self.width())
-            source_y = max(0, (self._cover.height() - self.height()) // 2)
-            painter.drawPixmap(
-                self.rect(),
-                self._cover,
-                self._cover.rect().adjusted(
-                    source_x,
-                    source_y,
-                    0,
-                    -source_y,
-                ),
-            )
+            painter.drawPixmap(self._art_rect, self._cover)
 
-        # The illustration is intentionally prominent, but a light full-image
-        # wash keeps the bright valley from competing with every control in the
-        # functional layer.  The stronger left gradient below is reserved for
-        # text readability and fades gradually instead of forming a black wall.
-        painter.fillRect(self.rect(), QColor(14, 15, 15, 24))
-
-        readability = QLinearGradient(
-            0.0,
-            0.0,
-            float(self.width()),
-            0.0,
+    @staticmethod
+    def _paint_feathered_edges(painter: QPainter, art: QRectF, canvas: QColor) -> None:
+        left, top, right, bottom = art.left(), art.top(), art.right(), art.bottom()
+        lead = min(120.0, art.width() * 0.22)
+        trail = min(42.0, art.width() * 0.08)
+        upper = min(50.0, art.height() * 0.08)
+        lower = min(76.0, art.height() * 0.11)
+        bands = (
+            (QRectF(left, top, lead, art.height()), QLinearGradient(left, 0, left + lead, 0)),
+            (QRectF(right - trail, top, trail, art.height()), QLinearGradient(right, 0, right - trail, 0)),
+            (QRectF(left, top, art.width(), upper), QLinearGradient(0, top, 0, top + upper)),
+            (QRectF(left, bottom - lower, art.width(), lower), QLinearGradient(0, bottom, 0, bottom - lower)),
         )
-        readability.setColorAt(0.0, QColor(8, 9, 10, 158))
-        readability.setColorAt(0.24, QColor(9, 10, 11, 138))
-        readability.setColorAt(0.46, QColor(10, 11, 12, 88))
-        readability.setColorAt(0.66, QColor(11, 12, 13, 38))
-        readability.setColorAt(1.0, QColor(11, 12, 13, 18))
-        painter.fillRect(self.rect(), readability)
-
-        vignette = QLinearGradient(
-            0.0,
-            0.0,
-            0.0,
-            float(self.height()),
-        )
-        vignette.setColorAt(0.0, QColor(8, 9, 10, 28))
-        vignette.setColorAt(0.58, QColor(8, 9, 10, 0))
-        vignette.setColorAt(1.0, QColor(8, 9, 10, 96))
-        painter.fillRect(self.rect(), vignette)
+        for band, blend in bands:
+            blend.setColorAt(0.0, canvas)
+            for position, alpha in ((0.26, 207), (0.72, 48), (1.0, 0)):
+                tint = QColor(canvas)
+                tint.setAlpha(alpha)
+                blend.setColorAt(position, tint)
+            painter.fillRect(band, blend)
 
 
 class HomeEntryDelegate(QStyledItemDelegate):
-    """Paint compact score rows with cached game-style instrument art."""
+    """Paint compact library rows with optional instrument art."""
 
     def __init__(
         self,
-        artwork: InstrumentLaneArtwork,
+        artwork: InstrumentLaneArtwork | None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -425,10 +461,11 @@ class HomeEntryDelegate(QStyledItemDelegate):
     @staticmethod
     def _row_fonts(base_font: QFont) -> tuple[QFont, QFont]:
         label_font = QFont(base_font)
-        label_font.setBold(True)
+        label_font.setPixelSize(hig.TYPE_BODY)
+        label_font.setWeight(QFont.Weight.DemiBold)
         detail_font = QFont(base_font)
-        if detail_font.pointSizeF() > 8.5:
-            detail_font.setPointSizeF(detail_font.pointSizeF() - 1.0)
+        detail_font.setPixelSize(hig.TYPE_SECONDARY)
+        detail_font.setWeight(QFont.Weight.Normal)
         return label_font, detail_font
 
     @staticmethod
@@ -443,54 +480,26 @@ class HomeEntryDelegate(QStyledItemDelegate):
         )
 
     def sizeHint(self, option, index) -> QSize:
+        explicit = index.data(Qt.ItemDataRole.SizeHintRole)
+        if isinstance(explicit, QSize):
+            return explicit
         styled = QStyleOptionViewItem(option)
         self.initStyleOption(styled, index)
-        label, _separator, _detail = styled.text.partition("\n")
-        label_font, detail_font = self._row_fonts(styled.font)
-        available_width = self._available_content_width(option)
-        title_height = self._title_height(
-            label,
-            label_font,
-            available_width,
-        )
-        info_height = max(QFontMetrics(detail_font).height() + 2, 20)
         inherited = super().sizeHint(styled, index)
+        if not index.flags() & Qt.ItemFlag.ItemIsSelectable:
+            return QSize(inherited.width(), max(40, QFontMetrics(styled.font).height() + 16))
+        label_font, detail_font = self._row_fonts(styled.font)
+        title_height = QFontMetrics(label_font).height()
+        info_height = max(QFontMetrics(detail_font).height() + 2, 20)
         return QSize(
             inherited.width(),
-            max(68, 8 + title_height + 5 + info_height + 8),
+            max(56, 8 + title_height + 5 + info_height + 8),
         )
-
-    def _available_content_width(self, option) -> int:
-        parent = self.parent()
-        if isinstance(parent, QListWidget):
-            width = parent.viewport().width()
-        else:
-            width = option.rect.width()
-        return max(220, int(width) - 22)
-
-    @staticmethod
-    def _title_text_flags() -> int:
-        return (
-            int(Qt.AlignmentFlag.AlignLeft)
-            | int(Qt.AlignmentFlag.AlignTop)
-            | int(Qt.TextFlag.TextWordWrap)
-            | int(Qt.TextFlag.TextWrapAnywhere)
-        )
-
-    @classmethod
-    def _title_height(cls, text: str, font: QFont, width: int) -> int:
-        metrics = QFontMetrics(font)
-        bounds = metrics.boundingRect(
-            QRect(0, 0, max(1, int(width)), 10_000),
-            cls._title_text_flags(),
-            text,
-        )
-        return max(metrics.height(), bounds.height())
 
     def paint(self, painter: QPainter, option, index) -> None:
         styled = QStyleOptionViewItem(option)
         self.initStyleOption(styled, index)
-        text = styled.text
+        text = str(index.data(Qt.DisplayRole) or "")
         styled.text = ""
         style = styled.widget.style() if styled.widget is not None else QApplication.style()
         style.drawControl(
@@ -499,6 +508,14 @@ class HomeEntryDelegate(QStyledItemDelegate):
             painter,
             styled.widget,
         )
+
+        if not index.flags() & Qt.ItemFlag.ItemIsSelectable:
+            painter.save()
+            painter.setFont(styled.font)
+            painter.setPen(QColor(hig.SECONDARY_TEXT))
+            painter.drawText(option.rect.adjusted(12, 0, -10, 0), Qt.AlignVCenter, text)
+            painter.restore()
+            return
 
         raw_ids = index.data(HOME_INSTRUMENT_IDS_ROLE)
         instrument_ids = tuple(raw_ids) if isinstance(raw_ids, (list, tuple)) else ()
@@ -536,12 +553,10 @@ class HomeEntryDelegate(QStyledItemDelegate):
 
         painter.save()
         painter.setFont(label_font)
-        painter.setPen(QColor("#f1e9dc") if selected else QColor("#ddd8cf"))
-        label_height = float(self._title_height(
-            label,
-            label_font,
-            round(content.width()),
-        ))
+        label_color = hig.SELECTION_TEXT if selected else hig.TEXT
+        painter.setPen(QColor(label_color))
+        title_metrics = painter.fontMetrics()
+        label_height = float(title_metrics.height())
         title_rect = QRectF(
             content.left(),
             content.top(),
@@ -550,12 +565,14 @@ class HomeEntryDelegate(QStyledItemDelegate):
         )
         painter.drawText(
             title_rect,
-            self._title_text_flags(),
-            label,
+            Qt.AlignmentFlag.AlignLeading | Qt.AlignmentFlag.AlignVCenter,
+            title_metrics.elidedText(
+                label, Qt.TextElideMode.ElideRight, max(0, round(content.width())),
+            ),
         )
 
         painter.setFont(detail_font)
-        painter.setPen(QColor("#a99b82") if selected else QColor("#8d8982"))
+        painter.setPen(QColor(hig.SECONDARY_TEXT))
         detail_metrics = painter.fontMetrics()
         info_top = title_rect.bottom() + 4.0
         info_height = max(
@@ -586,7 +603,7 @@ class HomeEntryDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         for instrument_id in visible_ids:
             target = QRectF(icon_x, icon_y, icon_size, icon_size)
-            image = self.artwork.pixmap_for(int(instrument_id))
+            image = self.artwork.pixmap_for(int(instrument_id)) if self.artwork is not None else None
             if image is not None:
                 painter.setOpacity(0.78 if selected else 0.62)
                 painter.drawImage(target, image, QRectF(image.rect()))
@@ -610,7 +627,7 @@ class HomeEntryDelegate(QStyledItemDelegate):
         if player_text:
             painter.setOpacity(1.0)
             painter.setFont(player_font)
-            painter.setPen(QColor("#c6a55d") if selected else QColor("#9e8b65"))
+            painter.setPen(QColor(hig.SELECTION_TEXT if selected else hig.SECONDARY_TEXT))
             painter.drawText(
                 QRectF(
                     content.right() - player_width,
@@ -625,6 +642,7 @@ class HomeEntryDelegate(QStyledItemDelegate):
 
 
 __all__ = [
+    "APP_ICON_IMAGE",
     "HOME_BACKGROUND_IMAGE",
     "HOME_INSTRUMENT_IDS_ROLE",
     "SHAI_ENSEMBLE_MARK_IMAGE",
@@ -636,4 +654,5 @@ __all__ = [
     "HomeIdentityBadge",
     "HomeLibrarySurface",
     "HomeLibraryTabs",
+    "HomeListWidget",
 ]

@@ -64,10 +64,12 @@ struct Voice {
     std::int64_t audible_frames = 0;
     std::int64_t fade_in_frames = 0;
     std::int64_t fade_out_frames = 0;
+    std::int64_t fade_start_age = 0;
     std::int64_t duration_frames = 0;
     std::int32_t instrument_id = 0;
     std::int32_t ntype = 0;
     bool native_articulation = false;
+    bool saturate = false;
     std::int64_t loop_start_frame = -1;
     std::int64_t loop_end_frame = -1;
     std::uint64_t serial = 0;
@@ -93,15 +95,14 @@ struct Mixer {
     bool finalised = false;
 };
 
-bool valid_loop(const Voice& voice, const Sample& sample) {
-    return voice.loop_start_frame >= 0
-        && voice.loop_end_frame > voice.loop_start_frame
-        && voice.loop_end_frame <= sample.frames;
+bool valid_loop(const Event& event, const Sample& sample) {
+    return event.loop_start_frame >= 0
+        && event.loop_end_frame > event.loop_start_frame
+        && event.loop_end_frame <= sample.frames;
 }
 
-void wrap_position(Voice& voice, const Sample& sample) {
-    if (!valid_loop(voice, sample)
-        || voice.position < static_cast<double>(voice.loop_end_frame)) {
+void wrap_position(Voice& voice) {
+    if (voice.position < static_cast<double>(voice.loop_end_frame)) {
         return;
     }
     const double span = static_cast<double>(
@@ -135,14 +136,18 @@ void start_voice(Mixer& mixer, const Event& event, std::int64_t age) {
     voice.audible_frames = event.audible_frames;
     voice.fade_in_frames = event.fade_in_frames;
     voice.fade_out_frames = event.fade_out_frames;
+    voice.fade_start_age = event.audible_frames - event.fade_out_frames;
     voice.duration_frames = event.duration_frames;
     voice.instrument_id = event.instrument_id;
     voice.ntype = event.ntype;
     voice.native_articulation = event.native_articulation;
-    voice.loop_start_frame = event.loop_start_frame;
-    voice.loop_end_frame = event.loop_end_frame;
+    voice.saturate = !event.native_articulation && (event.ntype == 21 || event.ntype == 22);
     voice.serial = event.serial;
-    wrap_position(voice, mixer.samples[static_cast<std::size_t>(voice.sample_index)]);
+    if (valid_loop(event, mixer.samples[static_cast<std::size_t>(event.sample_index)])) {
+        voice.loop_start_frame = event.loop_start_frame;
+        voice.loop_end_frame = event.loop_end_frame;
+        wrap_position(voice);
+    }
     mixer.voices.push_back(voice);
 }
 
@@ -264,6 +269,126 @@ void apply_master_output(Mixer& mixer, float* output, std::int32_t frames) {
         output[offset + 1] = soft_limit(output[offset + 1] * gain);
     }
     mixer.master_gain = std::clamp(end_gain, 0.0F, 1.0F);
+}
+
+// Keep frame math in both callers so the span loop can retain voice state in registers.
+#if defined(_MSC_VER)
+__forceinline
+#else
+inline
+#endif
+bool mix_voice_frame(
+    Voice& voice,
+    const Sample& sample,
+    std::int32_t sample_rate,
+    float& output_left,
+    float& output_right
+) {
+    const bool looping = voice.loop_start_frame >= 0;
+    if (looping) {
+        wrap_position(voice);
+    }
+    const auto first = static_cast<std::int64_t>(voice.position);
+    if (first < 0 || first >= sample.frames) {
+        return false;
+    }
+    std::int64_t second = first + 1;
+    if (looping && second >= voice.loop_end_frame) {
+        second = voice.loop_start_frame;
+    } else if (second >= sample.frames) {
+        second = sample.frames - 1;
+    }
+    const float fraction = static_cast<float>(
+        voice.position - static_cast<double>(first)
+    );
+    float transition_gain = 1.0F;
+    if (voice.fade_in_frames > 0 && voice.age_frames < voice.fade_in_frames) {
+        transition_gain *= std::clamp(
+            static_cast<float>(voice.age_frames + 1)
+                / static_cast<float>(voice.fade_in_frames),
+            0.0F,
+            1.0F
+        );
+    }
+    if (voice.fade_out_frames > 0 && voice.age_frames >= voice.fade_start_age) {
+        transition_gain *= std::clamp(
+            static_cast<float>(voice.audible_frames - voice.age_frames - 1)
+                / static_cast<float>(voice.fade_out_frames),
+            0.0F,
+            1.0F
+        );
+    }
+    const auto first_offset = static_cast<std::size_t>(first) * 2;
+    const auto second_offset = static_cast<std::size_t>(second) * 2;
+    const float technique_gain = articulation_gain(voice, sample_rate);
+    float left = (sample.pcm[first_offset]
+        + (sample.pcm[second_offset] - sample.pcm[first_offset]) * fraction)
+        * voice.gain * technique_gain;
+    float right = (sample.pcm[first_offset + 1]
+        + (sample.pcm[second_offset + 1] - sample.pcm[first_offset + 1]) * fraction)
+        * voice.gain * technique_gain;
+    if (voice.saturate) {
+        left = std::tanh(left * 1.35F);
+        right = std::tanh(right * 1.35F);
+    }
+    output_left += left * transition_gain;
+    output_right += right * transition_gain;
+    voice.position += voice.ratio;
+    ++voice.age_frames;
+    return true;
+}
+
+bool mix_voice(
+    Voice& voice,
+    const Sample& sample,
+    std::int32_t sample_rate,
+    float* output,
+    std::int32_t frames
+) {
+    const auto audible = std::min<std::int64_t>(frames, voice.remaining_frames);
+    for (std::int32_t frame = 0; frame < audible; ++frame) {
+        const auto offset = static_cast<std::size_t>(frame) * 2;
+        if (!mix_voice_frame(voice, sample, sample_rate, output[offset], output[offset + 1])) {
+            return false;
+        }
+    }
+    voice.remaining_frames -= audible;
+    // An event on the next frame may steal a voice before its expiry is processed.
+    return audible == frames;
+}
+
+void mix_single_frame(Mixer& mixer, float* output) {
+    // Dense admissions can leave only one frame between events.
+    float left = 0.0F;
+    float right = 0.0F;
+    auto voice = mixer.voices.begin();
+    while (voice != mixer.voices.end()) {
+        const Sample& sample = mixer.samples[static_cast<std::size_t>(voice->sample_index)];
+        if (voice->remaining_frames > 0
+            && mix_voice_frame(*voice, sample, mixer.sample_rate, left, right)) {
+            --voice->remaining_frames;
+            ++voice;
+        } else {
+            voice = mixer.voices.erase(voice);
+        }
+    }
+    output[0] = left;
+    output[1] = right;
+}
+
+void mix_span(Mixer& mixer, float* output, std::int32_t frames) {
+    // Accumulate each frame in the original admission order, then compact once.
+    auto next = mixer.voices.begin();
+    for (auto voice = mixer.voices.begin(); voice != mixer.voices.end(); ++voice) {
+        const Sample& sample = mixer.samples[static_cast<std::size_t>(voice->sample_index)];
+        if (mix_voice(*voice, sample, mixer.sample_rate, output, frames)) {
+            if (next != voice) {
+                *next = *voice;
+            }
+            ++next;
+        }
+    }
+    mixer.voices.erase(next, mixer.voices.end());
 }
 
 void restore_at(Mixer& mixer, std::int64_t target_frame) {
@@ -541,85 +666,28 @@ BDO_AUDIO_API std::int32_t bdo_audio_render_f32_stereo(
         return -1;
     }
     std::memset(output, 0, static_cast<std::size_t>(frames) * 2 * sizeof(float));
-    for (std::int32_t local_frame = 0; local_frame < frames; ++local_frame) {
-        while (mixer->event_index < mixer->events.size()
-               && mixer->events[mixer->event_index].frame <= mixer->frame) {
-            const Event& event = mixer->events[mixer->event_index++];
+    const auto& events = mixer->events;
+    std::int32_t rendered = 0;
+    while (rendered < frames) {
+        while (mixer->event_index < events.size()
+               && events[mixer->event_index].frame <= mixer->frame) {
+            const Event& event = events[mixer->event_index++];
             start_voice(*mixer, event, mixer->frame - event.frame);
         }
-
-        float left = 0.0F;
-        float right = 0.0F;
-        std::size_t voice_index = 0;
-        while (voice_index < mixer->voices.size()) {
-            Voice& voice = mixer->voices[voice_index];
-            const Sample& sample = mixer->samples[
-                static_cast<std::size_t>(voice.sample_index)
-            ];
-            wrap_position(voice, sample);
-            const auto first = static_cast<std::int64_t>(voice.position);
-            if (voice.remaining_frames <= 0 || first < 0 || first >= sample.frames) {
-                mixer->voices.erase(mixer->voices.begin() + static_cast<std::ptrdiff_t>(voice_index));
-                continue;
-            }
-            std::int64_t second = first + 1;
-            if (valid_loop(voice, sample) && second >= voice.loop_end_frame) {
-                second = voice.loop_start_frame;
-            } else if (second >= sample.frames) {
-                second = sample.frames - 1;
-            }
-            const float fraction = static_cast<float>(
-                voice.position - static_cast<double>(first)
-            );
-            float transition_gain = 1.0F;
-            if (voice.fade_in_frames > 0
-                && voice.age_frames < voice.fade_in_frames) {
-                transition_gain *= std::clamp(
-                    static_cast<float>(voice.age_frames + 1)
-                        / static_cast<float>(voice.fade_in_frames),
-                    0.0F,
-                    1.0F
-                );
-            }
-            const std::int64_t fade_start_age =
-                voice.audible_frames - voice.fade_out_frames;
-            if (voice.fade_out_frames > 0
-                && voice.age_frames >= fade_start_age) {
-                transition_gain *= std::clamp(
-                    static_cast<float>(
-                        voice.audible_frames - voice.age_frames - 1
-                    ) / static_cast<float>(voice.fade_out_frames),
-                    0.0F,
-                    1.0F
-                );
-            }
-            const std::size_t first_offset = static_cast<std::size_t>(first) * 2;
-            const std::size_t second_offset = static_cast<std::size_t>(second) * 2;
-            const float technique_gain = articulation_gain(
-                voice,
-                mixer->sample_rate
-            );
-            float voice_left = (sample.pcm[first_offset]
-                + (sample.pcm[second_offset] - sample.pcm[first_offset]) * fraction)
-                * voice.gain * technique_gain;
-            float voice_right = (sample.pcm[first_offset + 1]
-                + (sample.pcm[second_offset + 1] - sample.pcm[first_offset + 1]) * fraction)
-                * voice.gain * technique_gain;
-            if (!voice.native_articulation
-                && (voice.ntype == 21 || voice.ntype == 22)) {
-                voice_left = std::tanh(voice_left * 1.35F);
-                voice_right = std::tanh(voice_right * 1.35F);
-            }
-            left += voice_left * transition_gain;
-            right += voice_right * transition_gain;
-            voice.position += voice.ratio;
-            ++voice.age_frames;
-            --voice.remaining_frames;
-            ++voice_index;
+        // Without new admissions, each voice can fill a contiguous span.
+        std::int32_t span = frames - rendered;
+        if (mixer->event_index < events.size()) {
+            const auto until_event = events[mixer->event_index].frame - mixer->frame;
+            span = static_cast<std::int32_t>(std::min<std::int64_t>(span, until_event));
         }
-        output[static_cast<std::size_t>(local_frame) * 2] = left;
-        output[static_cast<std::size_t>(local_frame) * 2 + 1] = right;
-        ++mixer->frame;
+        float* span_output = output + static_cast<std::size_t>(rendered) * 2;
+        if (span == 1) {
+            mix_single_frame(*mixer, span_output);
+        } else {
+            mix_span(*mixer, span_output, span);
+        }
+        rendered += span;
+        mixer->frame += span;
     }
     apply_master_output(*mixer, output, frames);
     return frames;

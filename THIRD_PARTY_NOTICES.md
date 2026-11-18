@@ -1,8 +1,12 @@
 # Third-party notices
 
-This project depends on third-party software, including PySide6/Qt, Mido, NumPy, and PyInstaller. Their respective licenses and notices apply; see the dependency metadata installed with each package and the official upstream projects.
+This page identifies third-party components, models, materials and research
+used by BDO Music Composer. Each component retains its upstream terms. For a
+specific Windows EXE, consult its embedded runtime inventory and notice files
+alongside the applicable upstream licenses.
 
-The root MIT License applies only to original BDO Music Composer code owned by CocoaMist. It does not relicense third-party components.
+The root [MIT License](LICENSE) applies to original BDO Music Composer code
+owned by CocoaMist.
 
 ## Optional CC0 sample-pack release asset
 
@@ -31,8 +35,8 @@ Its inclusion does not alter the client-content boundary in
 ## Human-readable upstream credits
 
 This table records the direct and release-relevant foundations of the current
-application. Every entry links to its GitHub source. It complements, rather
-than replaces, the exact transitive inventory embedded in each Windows build.
+application. Each entry records its upstream source. The exact audit below
+tracks the transitive runtime and notice files for each Windows build.
 
 | Project | Role | License / terms | GitHub |
 |---|---|---|---|
@@ -53,6 +57,8 @@ than replaces, the exact transitive inventory embedded in each Windows build.
 | resampy | Audio resampling dependency | ISC | [bmcfee/resampy](https://github.com/bmcfee/resampy) |
 | CPython | Python runtime | PSF-2.0 | [python/cpython](https://github.com/python/cpython) |
 | PySide6 / Qt | Desktop UI and multimedia runtime | LGPL-3.0/GPL, module-specific | [Qt official GitHub mirror](https://github.com/qt) |
+| Qt WebView | Embedded online score library | Qt module terms | [Qt licensing](https://doc.qt.io/qt-6/licensing.html) |
+| Microsoft Edge WebView2 | System browser runtime used by the Windows Qt WebView plugin | Microsoft WebView2 terms | [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) |
 | Mido | Standard MIDI parsing and writing | MIT | [mido/mido](https://github.com/mido/mido) |
 | Pillow | Build-time image/icon processing | MIT-CMU | [python-pillow/Pillow](https://github.com/python-pillow/Pillow) |
 | PyInstaller | Windows one-file packaging | GPL-2.0-or-later with special exception | [pyinstaller/pyinstaller](https://github.com/pyinstaller/pyinstaller) |
@@ -62,6 +68,23 @@ than replaces, the exact transitive inventory embedded in each Windows build.
 License labels above are human-readable summaries of the installed metadata.
 Bundled subcomponents retain their own notices and may make a package's exact
 license expression broader than the short label.
+
+The Windows executable includes the Qt WebView backend plugin. Microsoft Edge
+WebView2 is provided by the operating environment.
+
+## Desktop interface fonts
+
+The Windows build bundles unmodified OpenType or TrueType fonts under
+`assets/fonts/<locale>/UI` and `assets/fonts/<locale>/Theme`. Each directory
+includes its upstream copyright and SIL Open Font License 1.1 text as `OFL.txt`.
+
+| Locale directory | Interface | Home titles |
+|---|---|---|
+| `zh-CN` | [LXGW 975 Yuan SC 500W](https://github.com/lxgw/975Yuan/releases/tag/26.07.26) | [LXGW WenKai GB Lite](https://github.com/lxgw/LxgwWenkaiGB-Lite/releases/tag/v1.530) |
+| `zh-TW` | [Chiron GoRound TC 500M](https://github.com/chiron-fonts/chiron-go-round-tc/tree/v1.011/STATIC_OTF) | [Iansui](https://github.com/ButTaiwan/iansui) |
+| `en` | [Nunito](https://github.com/googlefonts/nunito) | [Dancing Script](https://github.com/impallari/DancingScript) |
+| `ja` | [M PLUS Rounded 1c](https://github.com/google/fonts/tree/main/ofl/mplusrounded1c) | [Klee One SemiBold](https://github.com/fontworks-fonts/Klee) |
+| `ko` | [NanumSquareRound Regular](https://hangeul.naver.com/font) | [Nanum Pen Script](https://github.com/google/fonts/tree/main/ofl/nanumpenscript) |
 
 ## Basic Pitch code and ONNX model
 
@@ -83,11 +106,9 @@ Bishop-R's `midi-to-bdo`. That historical material remains subject to its
 original terms. Starting with v0.3.0, the current source tree and release
 artifacts contain no files or import-compatible modules from that vendor tree.
 
-The MIDI parser and mappings under `bdo_midi/`, the adaptation layer under
-`bdo_export/`, and the BDO v9 document model, reader/writer, and ICE
-implementation under `bdo_codec/` are project implementations based on Mido's
-public API, observed format behavior, local test vectors, and game-save
-evidence.
+The [MIDI parser and mappings](src/bdo_midi/), [export adapter](src/bdo_export/),
+and [BDO v9 codec](src/bdo_codec/) are project implementations based on Mido's
+public API, observed format behavior, local test vectors, and game-save evidence.
 
 Black Desert Online names and format references are used for interoperability. This repository is unofficial, is not affiliated with Pearl Abyss, and must not include proprietary game assets.
 
@@ -138,10 +159,16 @@ cache contains content-keyed aggregate feature profiles, not WAV payloads,
 audio clips, sample paths, or reference-audio paths; neither that cache nor the
 reference audio is included in project files or the Windows executable.
 
-Every `BDO-Music-Composer.exe` build runs
-`scripts/audit_transcription_licenses.py`. It records the installed transitive
-dependency graph, versions, declared licenses, available license files, and
-hashes of the ONNX model and ONNX Runtime native libraries. Available notice
-files and the generated report are embedded in the executable. The checked-in
-`packaging/transcription_release_policy.json` approves the recorded v1.0.0
-schema-2 inventory digest only; a changed digest fails closed.
+## Verify a Windows build
+
+The [transcription license audit](scripts/audit_transcription_licenses.py)
+records the installed transitive dependency graph, versions, declared licenses,
+available license files, and hashes of the ONNX model and ONNX Runtime native
+libraries. The executable embeds the report and available notices under
+`licenses/transcription`. The [release policy](packaging/transcription_release_policy.json)
+approves the recorded v1.0.0 schema-2 inventory digest. A changed digest
+requires another maintainer review before a public build.
+
+The accompanying SPDX file records build-environment package metadata and the
+final EXE digest. Consult the [Windows release guide](docs/WINDOWS_PACKAGING.md)
+for how these two records are generated and checked.

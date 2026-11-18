@@ -133,11 +133,20 @@ class CreationSession:
             target.clip_start_ms, target.clip_end_ms = update.clip_start_ms, update.clip_end_ms
             target.arrangement_clips = list(update.arrangement_clips)
         else:
-            target.notes = list(changed.notes)
             target.bdo_instrument_id = changed.bdo_instrument_id
-            if action is CreationAction.EXPRESS:
+            brief = self.candidate.brief
+            if (action is CreationAction.EXPRESS
+                    and brief.velocity_scale_percent is not None and not brief.shape_durations):
+                # Keep exact authored durations when only velocity was edited.
+                target.notes = [
+                    authored._replace(vel=scaled.vel)
+                    for authored, scaled in zip(target.notes, changed.notes, strict=True)
+                ]
+            elif action is CreationAction.EXPRESS:
                 scale = float(target.duration_scale)
-                target.notes = [n._replace(dur=n.dur / scale) for n in target.notes]
+                target.notes = [n._replace(dur=n.dur / scale) for n in changed.notes]
+            else:
+                target.notes = list(changed.notes)
             if action is CreationAction.ADAPT:
                 if target.bdo_instrument_id != next(t.bdo_instrument_id for t in self.context.tracks if t.track_id == target_id):
                     valid = {0, *(n for n, _ in self.request.supported_articulations.get(target.bdo_instrument_id, ()))}

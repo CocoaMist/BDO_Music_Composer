@@ -956,6 +956,8 @@ EN.update({
     "右键删除 · Ctrl 拖选追加 · 拖动两端调整时值": "Right-click to delete · Ctrl-drag to add selection · Drag edges to resize",
     "双击新建 · Ctrl+拖动复制 · Alt 临时取消吸附 · Ctrl+D 复制": "Double-click to add · Ctrl-drag to clone · Alt bypasses snap · Ctrl+D duplicates",
     "已选择 1 个音符 · {note} · {start} ms": "1 note selected · {note} · {start} ms",
+    "已选择 {count} 个音符": "{count} notes selected",
+    "普通（{articulation}）": "Normal ({articulation})",
     "已选择 {count} 个音符 · 可批量修改共同属性": "{count} notes selected · Shared properties can be edited together",
     "准备中…": "Preparing…", "正在准备游戏音源… {loaded}/{total}": "Preparing game audio… {loaded}/{total}",
     "游戏音源已缓存 · 开始试听": "Game audio cached · Starting preview",
@@ -996,6 +998,8 @@ JA.update({
     "右键删除 · Ctrl 拖选追加 · 拖动两端调整时值": "右クリックで削除・Ctrlドラッグで選択追加・端をドラッグして長さを調整",
     "双击新建 · Ctrl+拖动复制 · Alt 临时取消吸附 · Ctrl+D 复制": "ダブルクリックで追加・Ctrlドラッグで複製・Altでスナップ解除・Ctrl+Dで複製",
     "已选择 1 个音符 · {note} · {start} ms": "1ノート選択・{note}・{start} ms",
+    "已选择 {count} 个音符": "{count}ノート選択",
+    "普通（{articulation}）": "通常（{articulation}）",
     "已选择 {count} 个音符 · 可批量修改共同属性": "{count}ノート選択・共通属性を一括編集できます",
     "准备中…": "準備中…", "正在准备游戏音源… {loaded}/{total}": "ゲーム音源を準備中… {loaded}/{total}",
     "游戏音源已缓存 · 开始试听": "ゲーム音源をキャッシュしました・プレビューを開始",
@@ -1036,6 +1040,8 @@ KO.update({
     "右键删除 · Ctrl 拖选追加 · 拖动两端调整时值": "우클릭으로 삭제 · Ctrl 드래그로 선택 추가 · 가장자리를 드래그하여 길이 조절",
     "双击新建 · Ctrl+拖动复制 · Alt 临时取消吸附 · Ctrl+D 复制": "두 번 클릭해 추가 · Ctrl+드래그로 복제 · Alt로 스냅 해제 · Ctrl+D로 복제",
     "已选择 1 个音符 · {note} · {start} ms": "음표 1개 선택 · {note} · {start} ms",
+    "已选择 {count} 个音符": "음표 {count}개 선택",
+    "普通（{articulation}）": "일반({articulation})",
     "已选择 {count} 个音符 · 可批量修改共同属性": "음표 {count}개 선택 · 공통 속성을 함께 편집할 수 있습니다",
     "准备中…": "준비 중…", "正在准备游戏音源… {loaded}/{total}": "게임 음원 준비 중… {loaded}/{total}",
     "游戏音源已缓存 · 开始试听": "게임 음원 캐시 완료 · 미리듣기 시작",
@@ -1310,9 +1316,9 @@ EN.update({
     "论文引用": "Research Citation",
     "论文": "Paper",
     "社区、测试与音乐交流": "Community, Testing, and Music Exchange",
-    "本程序未内置 OpenAI API 或云端模型；OpenAI 仅列为开发协作致谢。": (
-        "This app does not embed the OpenAI API or any cloud model; OpenAI is "
-        "acknowledged only for development collaboration."
+    "ChatGPT 协助开发。配置 DeepSeek 后，曲谱助手可使用其模型。": (
+        "ChatGPT assisted with development. The score assistant can use DeepSeek "
+        "models once configured."
     ),
     "完整许可清单": "Complete License Inventory",
     "这里是便于阅读的致谢；每次构建仍会生成并随 EXE 嵌入完整的依赖、许可证、NOTICE 与二进制哈希清单。": (
@@ -1341,9 +1347,9 @@ JA.update({
     "论文引用": "論文の引用",
     "论文": "論文",
     "社区、测试与音乐交流": "コミュニティ・テスト・音楽交流",
-    "本程序未内置 OpenAI API 或云端模型；OpenAI 仅列为开发协作致谢。": (
-        "本アプリはOpenAI APIやクラウドモデルを内蔵していません。OpenAIは"
-        "開発協力への謝辞としてのみ掲載しています。"
+    "ChatGPT 协助开发。配置 DeepSeek 后，曲谱助手可使用其模型。": (
+        "ChatGPT は開発を支援しました。DeepSeek を設定すると、楽譜アシスタントで"
+        "そのモデルを利用できます。"
     ),
     "完整许可清单": "完全なライセンス一覧",
     "这里是便于阅读的致谢；每次构建仍会生成并随 EXE 嵌入完整的依赖、许可证、NOTICE 与二进制哈希清单。": (
@@ -1371,9 +1377,9 @@ KO.update({
     "论文引用": "논문 인용",
     "论文": "논문",
     "社区、测试与音乐交流": "커뮤니티·테스트·음악 교류",
-    "本程序未内置 OpenAI API 或云端模型；OpenAI 仅列为开发协作致谢。": (
-        "이 앱은 OpenAI API 또는 클라우드 모델을 내장하지 않습니다. OpenAI는 "
-        "개발 협업 감사 항목으로만 표시됩니다."
+    "ChatGPT 协助开发。配置 DeepSeek 后，曲谱助手可使用其模型。": (
+        "ChatGPT는 개발을 지원했습니다. DeepSeek를 설정하면 악보 도우미에서 해당 모델을 "
+        "사용할 수 있습니다."
     ),
     "完整许可清单": "전체 라이선스 목록",
     "这里是便于阅读的致谢；每次构建仍会生成并随 EXE 嵌入完整的依赖、许可证、NOTICE 与二进制哈希清单。": (
@@ -5061,7 +5067,7 @@ EN.update({
     "导出错误": "Export Errors",
     "需要注意": "Attention",
     "发现 {count} 个导出错误；对应轨道已标红，可点击轨道标记查看。": "Found {count} export errors. Affected tracks are marked red; click a track marker to review.",
-    "{count} 条轨道使用相同乐器；已标为琥珀色，导出时会合并。": "{count} tracks use the same instrument. They are marked amber and will be merged on export.",
+    "{count} 条轨道使用相同乐器，导出时会合并。": "{count} tracks use the same instrument and will merge on export.",
 })
 
 
@@ -5109,7 +5115,7 @@ JA.update({
     "导出错误": "書き出しエラー",
     "需要注意": "要確認",
     "发现 {count} 个导出错误；对应轨道已标红，可点击轨道标记查看。": "書き出しエラーが{count}件あります。対象トラックは赤で表示され、トラックマーカーをクリックして確認できます。",
-    "{count} 条轨道使用相同乐器；已标为琥珀色，导出时会合并。": "{count}トラックが同じ楽器を使用しています。琥珀色で表示され、書き出し時に統合されます。",
+    "{count} 条轨道使用相同乐器，导出时会合并。": "{count}トラックが同じ楽器を使用しており、書き出し時に統合されます。",
 })
 
 
@@ -5157,7 +5163,7 @@ KO.update({
     "导出错误": "내보내기 오류",
     "需要注意": "주의 필요",
     "发现 {count} 个导出错误；对应轨道已标红，可点击轨道标记查看。": "내보내기 오류 {count}개를 발견했습니다. 해당 트랙은 빨간색으로 표시되며 트랙 마커를 클릭해 확인할 수 있습니다.",
-    "{count} 条轨道使用相同乐器；已标为琥珀色，导出时会合并。": "{count}개 트랙이 같은 악기를 사용합니다. 호박색으로 표시되며 내보낼 때 병합됩니다.",
+    "{count} 条轨道使用相同乐器，导出时会合并。": "{count}개 트랙이 같은 악기를 사용하며 내보낼 때 병합됩니다.",
 })
 
 
@@ -5381,7 +5387,7 @@ EN.update({
     "全局": "Global",
     "选择全部音符": "Select all notes",
     "画布模式与选择": "Canvas modes and selection",
-    "退出绘制或清除候选选择": "Exit draw mode or clear candidate selection",
+    "退出绘制或取消选择": "Exit draw mode or clear selection",
     "按网格移动时间": "Move in time by the grid",
     "音块移动与缩放": "Note movement and resizing",
     "精细移动时间（网格的 1/8）": "Fine time move (1/8 of the grid)",
@@ -5460,7 +5466,7 @@ JA.update({
     "基础操作": "基本操作",
     "选择全部音符": "すべてのノートを選択",
     "画布模式与选择": "キャンバスのモードと選択",
-    "退出绘制或清除候选选择": "描画を終了、または候補選択を解除",
+    "退出绘制或取消选择": "描画モードを終了、または選択を解除",
     "按网格移动时间": "グリッド単位で時間移動",
     "音块移动与缩放": "ノートの移動と長さ調整",
     "精细移动时间（网格的 1/8）": "時間を微調整（グリッドの1/8）",
@@ -5539,7 +5545,7 @@ KO.update({
     "基础操作": "기본 작업",
     "选择全部音符": "모든 음표 선택",
     "画布模式与选择": "캔버스 모드 및 선택",
-    "退出绘制或清除候选选择": "그리기 종료 또는 후보 선택 해제",
+    "退出绘制或取消选择": "그리기 모드 종료 또는 선택 해제",
     "按网格移动时间": "그리드 단위로 시간 이동",
     "音块移动与缩放": "음표 이동 및 길이 조정",
     "精细移动时间（网格的 1/8）": "시간 미세 이동(그리드의 1/8)",
@@ -5969,3 +5975,243 @@ KO.update({
 EN["超出当前游戏音域"] = "Outside the current game pitch range"
 JA["超出当前游戏音域"] = "現在のゲーム音域外"
 KO["超出当前游戏音域"] = "현재 게임 음역 밖"
+
+EN.update({
+    "属性": "Properties", "编排": "Arrangement", "音符编辑": "Note editor",
+    "双击片段，开始编辑音符。": "Double-click a clip to edit its notes.",
+    "打开音符编辑器": "Open note editor", "显示属性面板": "Show inspector",
+    "显示音符编辑区": "Show note editor", "独立窗口": "Pop out",
+    "游戏音量": "Game volume", "轨道移调": "Track transpose", "应用效果": "Apply effects", "乐器": "Instrument",
+})
+JA.update({
+    "属性": "プロパティ", "编排": "アレンジ", "音符编辑": "ノート編集",
+    "双击片段，开始编辑音符。": "クリップをダブルクリックしてノートを編集します。",
+    "打开音符编辑器": "ノート編集を開く", "显示属性面板": "プロパティを表示",
+    "显示音符编辑区": "ノート編集を表示", "独立窗口": "別ウィンドウ",
+    "游戏音量": "ゲーム音量", "轨道移调": "トラック移調", "应用效果": "エフェクトを適用", "乐器": "楽器",
+})
+KO.update({
+    "属性": "속성", "编排": "편곡", "音符编辑": "노트 편집",
+    "双击片段，开始编辑音符。": "클립을 더블 클릭하여 노트를 편집하세요.",
+    "打开音符编辑器": "노트 편집기 열기", "显示属性面板": "속성 패널 표시",
+    "显示音符编辑区": "노트 편집기 표시", "独立窗口": "별도 창",
+    "游戏音量": "게임 음량", "轨道移调": "트랙 조옮김", "应用效果": "효과 적용", "乐器": "악기",
+})
+
+
+_HOME_AND_ABOUT_TRANSLATIONS = {
+    "外观": ("Appearance", "外観", "모양"),
+    "界面切换动效": ("Interface animations", "画面切り替えのアニメーション", "화면 전환 애니메이션"),
+    "为页面切换和浮窗打开添加短缓动": (
+        "Animate page changes and utility windows briefly",
+        "ページの切り替えとダイアログの表示を短くアニメーションします",
+        "화면을 전환하거나 도구 창을 열 때 짧은 애니메이션을 표시합니다",
+    ),
+    "本地曲谱工作台": (
+        "Local score workspace",
+        "ローカル楽譜ワークスペース",
+        "로컬 악보 작업 공간",
+    ),
+    "资料库": ("Library", "ライブラリ", "라이브러리"),
+    "最近项目": ("Recent Projects", "最近のプロジェクト", "최근 프로젝트"),
+    "没有匹配的结果": (
+        "No matching results", "一致する結果がありません", "일치하는 결과가 없습니다",
+    ),
+    "关于 BDO Music Composer": (
+        "About BDO Music Composer", "BDO Music Composer について", "BDO Music Composer 정보",
+    ),
+    "版本 {version}": ("Version {version}", "バージョン {version}", "버전 {version}"),
+    "作者介绍": ("About the Author", "作者について", "제작자 소개"),
+    "版本介绍": ("Version Overview", "バージョン概要", "버전 소개"),
+    "项目作者 · {handle}": (
+        "Project author · {handle}", "プロジェクト作者 · {handle}", "프로젝트 개발자 · {handle}",
+    ),
+    "开发协作": ("Development collaborator", "開発協力", "개발 협업"),
+    "曲谱助手模型": ("Score Assistant model", "楽譜アシスタントのモデル", "악보 도우미 모델"),
+    "配置后可用于对话和曲谱分析。": (
+        "Supports chat and score analysis once configured.",
+        "設定後は対話と楽譜分析に使えます。",
+        "설정 후 대화와 악보 분석에 사용할 수 있습니다.",
+    ),
+    "我做这个工具，是想让《黑色沙漠》的作曲玩家能在本地编曲和试听，再把曲谱带回游戏一起演奏。": (
+        "I made this tool so Black Desert composers can arrange and preview music locally, then bring their scores into the game to play together.",
+        "『黒い砂漠』で作曲を楽しむ人が手元で編曲と試聴を済ませ、ゲームに楽譜を持ち帰って一緒に演奏できるように、このツールを作りました。",
+        "검은사막에서 작곡을 즐기는 분들이 로컬에서 편곡하고 미리 들은 뒤, 게임으로 악보를 가져가 함께 연주할 수 있도록 이 도구를 만들었습니다.",
+    ),
+    "协助界面设计、代码实现与测试。": (
+        "Assists with interface design, implementation, and testing.",
+        "UI デザイン、実装、テストを支援。",
+        "인터페이스 디자인, 구현, 테스트를 지원합니다.",
+    ),
+    "在多轨时间轴和钢琴卷帘编辑 MIDI、试听编排，并导出 BDO v9 曲谱。": (
+        "Edit MIDI in the multitrack timeline and piano roll, audition arrangements, and export BDO v9 scores.",
+        "マルチトラックのタイムラインとピアノロールで MIDI を編集し、編曲を試聴して BDO v9 楽譜を書き出せます。",
+        "멀티트랙 타임라인과 피아노 롤에서 MIDI를 편집하고 편곡을 미리 들은 후 BDO v9 악보로 내보낼 수 있습니다.",
+    ),
+    "最近项目、自动保存与示例": (
+        "Recent projects, autosaves, and examples",
+        "最近のプロジェクト、自動保存、サンプル",
+        "최근 프로젝트, 자동 저장 및 예제",
+    ),
+    "Black Desert Music 目录中的曲谱": (
+        "Scores in the Black Desert Music folder",
+        "Black Desert Music フォルダーの楽譜",
+        "Black Desert Music 폴더의 악보",
+    ),
+    "本地处理 · 不上传工程": (
+        "Local processing · projects stay on this device",
+        "ローカル処理 · プロジェクトはアップロードされません",
+        "로컬 처리 · 프로젝트를 업로드하지 않음",
+    ),
+    "打开游戏目录": (
+        "Open Game Folder",
+        "ゲームフォルダーを開く",
+        "게임 폴더 열기",
+    ),
+    "开始创作": ("Start Composing", "作曲を始める", "작곡 시작"),
+    "从最近工程继续，或开始一个新的编曲项目": (
+        "Continue a recent project or start a new arrangement",
+        "最近のプロジェクトを続けるか、新しい編曲を始めます",
+        "최근 프로젝트를 계속하거나 새 편곡을 시작하세요",
+    ),
+    "新建空白项目\n从一条空白轨道开始": (
+        "New Blank Project\nStart with an empty track",
+        "空のプロジェクトを作成\n空のトラックから開始",
+        "빈 프로젝트 만들기\n빈 트랙에서 시작",
+    ),
+    "导入 MIDI\n继续编排已有音乐": (
+        "Import MIDI\nContinue arranging existing music",
+        "MIDI を読み込む\n既存の曲を編曲",
+        "MIDI 가져오기\n기존 음악 계속 편곡",
+    ),
+    "打开工程\n浏览本地项目文件": (
+        "Open Project\nBrowse local project files",
+        "プロジェクトを開く\nローカルファイルを参照",
+        "프로젝트 열기\n로컬 프로젝트 파일 찾기",
+    ),
+    "打开工程或曲谱": ("Open Project or Score", "プロジェクト・楽譜を開く", "프로젝트나 악보 열기"),
+    "打开工程或曲谱\n支持 JSON、BDO 和 BDOM": (
+        "Open Project or Score\nJSON, BDO and BDOM",
+        "プロジェクト・楽譜を開く\nJSON、BDO、BDOM に対応",
+        "프로젝트나 악보 열기\nJSON, BDO, BDOM 지원",
+    ),
+    "工程与曲谱 (*.json *.bdo *.bdom)": (
+        "Projects and Scores (*.json *.bdo *.bdom)",
+        "プロジェクトと楽譜 (*.json *.bdo *.bdom)",
+        "프로젝트 및 악보 (*.json *.bdo *.bdom)",
+    ),
+    "BDO 曲谱 (*.bdo *.bdom)": (
+        "BDO Scores (*.bdo *.bdom)", "BDO 楽譜 (*.bdo *.bdom)", "BDO 악보 (*.bdo *.bdom)",
+    ),
+    "JSON 文件 (*.json)": ("JSON Files (*.json)", "JSON ファイル (*.json)", "JSON 파일 (*.json)"),
+    "{count} 人": (
+        "{count} players",
+        "{count}人",
+        "{count}명",
+    ),
+    "上限 {limit} 人": (
+        "{limit}-player limit",
+        "上限{limit}人",
+        "최대 {limit}명",
+    ),
+    "{count} 种乐器": (
+        "{count} instruments",
+        "{count}楽器",
+        "{count}개 악기",
+    ),
+}
+
+for _source, (_english, _japanese, _korean) in _HOME_AND_ABOUT_TRANSLATIONS.items():
+    if _source in EN or _source in JA or _source in KO:
+        raise RuntimeError(f"duplicate Home or About localization source: {_source}")
+    EN[_source] = _english
+    JA[_source] = _japanese
+    KO[_source] = _korean
+
+del _source, _english, _japanese, _korean
+
+_FEEDBACK_TRANSLATIONS = {
+    "反馈": ("Feedback", "フィードバック", "피드백"),
+    "收件箱": ("Inbox", "受信トレイ", "받은 편지함"),
+    "暂无反馈记录": ("No feedback yet", "フィードバックはありません", "피드백 기록이 없습니다"),
+    "写反馈": ("Write feedback", "フィードバックを書く", "피드백 작성"),
+    "已提交": ("Submitted", "送信済み", "제출됨"),
+    "已查收": ("Acknowledged", "受領確認済み", "확인됨"),
+    "已回复": ("Replied", "返信あり", "답변 도착"),
+    "{count} 条反馈有新进展": (
+        "Feedback updates · {count}",
+        "{count} 件のフィードバックに進展があります",
+        "새 피드백 진행 상황 {count}건",
+    ),
+    "本机反馈记录": ("Feedback on this device", "この端末のフィードバック", "이 기기의 피드백"),
+    "未读": ("Unread", "未読", "읽지 않음"),
+    "提交反馈 · 维护者查收 · 查看处理结果": (
+        "Submit feedback · Maintainer review · Check the outcome",
+        "送信 · メンテナー確認 · 結果の確認", "피드백 제출 · 관리자 확인 · 결과 조회",
+    ),
+    "提出反馈": ("Write feedback", "フィードバックを書く", "피드백 작성"),
+    "查询结果": ("Check outcome", "結果を確認", "결과 조회"),
+    "查回执": ("Find receipt", "受付結果を照会", "접수 내역 조회"),
+    "查询": ("Look up", "照会", "조회"),
+    "提交反馈": ("Submit feedback", "フィードバックを送信", "피드백 제출"),
+    "处理结果": ("Outcome", "対応結果", "처리 결과"),
+    "维护者消息": ("Message from maintainer", "メンテナーからの連絡", "관리자 메시지"),
+    "查询码": ("Lookup code", "照会コード", "조회 코드"),
+    "复制查询码": ("Copy lookup code", "照会コードをコピー", "조회 코드 복사"),
+    "附上诊断日志": ("Attach diagnostic log", "診断ログを添付", "진단 로그 첨부"),
+    "诊断日志": ("Diagnostic log", "診断ログ", "진단 로그"),
+    "提交诊断日志": ("Submit diagnostic log", "診断ログを送信", "진단 로그 제출"),
+    "请填写反馈，或勾选并提交已有的诊断日志。": (
+        "Write feedback or attach an available diagnostic log.",
+        "フィードバックを入力するか、記録済みの診断ログを添付してください。",
+        "피드백을 작성하거나 기존 진단 로그를 첨부하세요.",
+    ),
+    "写下问题或建议。请勿填写个人信息。": (
+        "Describe an issue or suggest an improvement. Leave out personal information.",
+        "問題や改善案を書いてください。個人情報は入力しないでください。",
+        "문제나 개선 사항을 알려 주세요. 개인정보는 입력하지 마세요.",
+    ),
+    "持有查询码的人可以查看回执。": (
+        "Anyone with the lookup code can view the receipt.",
+        "照会コードを持っている人は受付結果を確認できます。",
+        "조회 코드를 가진 사람은 누구나 접수 내역을 볼 수 있습니다.",
+    ),
+    "请描述发生了什么，或你希望怎样改进。反馈由维护者查看，请勿填写个人信息。": (
+        "Describe what happened or suggest an improvement. The maintainer will read it. Please omit personal information.",
+        "起きたことや改善案を書いてください。メンテナーが確認します。個人情報は入力しないでください。",
+        "발생한 문제나 개선 사항을 알려 주세요. 관리자가 확인합니다. 개인정보는 입력하지 마세요.",
+    ),
+    "保存查询码，可回来查看进度和处理结果。持有码的人可以查询。": (
+        "Save your lookup code to check progress and the outcome later. Anyone with the code can look it up.",
+        "進捗や結果を確認するために照会コードを保存してください。コードを持つ人は誰でも照会できます。",
+        "진행 상황과 결과를 확인할 수 있도록 조회 코드를 저장하세요. 코드를 가진 사람은 누구나 조회할 수 있습니다.",
+    ),
+    "反馈服务暂未启用。": ("The feedback service is not enabled yet.", "フィードバックサービスは現在無効です。", "피드백 서비스가 아직 활성화되지 않았습니다."),
+    "暂停接收新反馈。可查询已提交的反馈。": (
+        "New feedback is paused. You can look up past submissions.",
+        "新規フィードバックの受付は一時停止中です。送信済みのフィードバックは照会できます。",
+        "새 피드백 접수가 일시 중지되었습니다. 제출한 피드백은 조회할 수 있습니다.",
+    ),
+    "请输入反馈内容，长度最多 1200 个字符。": (
+        "Enter your feedback using up to 1,200 characters.", "1,200文字以内で入力してください。", "피드백을 1,200자 이내로 입력하세요.",
+    ),
+    "请输入有效的查询码。": ("Enter a valid lookup code.", "有効な照会コードを入力してください。", "올바른 조회 코드를 입력하세요."),
+    "正在连接反馈服务…": ("Connecting to the feedback service…", "フィードバックサービスに接続中…", "피드백 서비스에 연결 중…"),
+    "没有查到这条反馈。": ("No feedback found for this code.", "このコードに対応するフィードバックが見つかりません。", "이 코드의 피드백을 찾을 수 없습니다."),
+    "反馈服务已达接收上限，请稍后再试。": (
+        "The feedback service reached its limit. Try again later.", "受付上限に達しました。しばらくしてからお試しください。",
+        "피드백 접수 한도에 도달했습니다. 잠시 후 다시 시도하세요.",
+    ),
+    "连接失败，请稍后重试。": ("Unable to connect. Try again later.", "接続できませんでした。時間をおいてお試しください。", "연결할 수 없습니다. 잠시 후 다시 시도하세요."),
+    "反馈编号 {id}": ("Feedback ID {id}", "フィードバック番号 {id}", "피드백 번호 {id}"),
+    "已提交，等待维护者查收。": ("Submitted. Awaiting maintainer review.", "送信済みです。メンテナーの確認をお待ちください。", "제출되었습니다. 관리자의 확인을 기다리고 있습니다."),
+    "维护者已查收，等待处理结果。": ("Acknowledged. Awaiting an outcome.", "メンテナーが確認しました。対応結果をお待ちください。", "관리자가 확인했습니다. 처리 결과를 기다리고 있습니다."),
+    "已发布处理结果。": ("The outcome is available.", "対応結果が掲載されました。", "처리 결과가 게시되었습니다."),
+}
+
+for _source, (_english, _japanese, _korean) in _FEEDBACK_TRANSLATIONS.items():
+    EN[_source] = _english
+    JA[_source] = _japanese
+    KO[_source] = _korean
+
+del _source, _english, _japanese, _korean

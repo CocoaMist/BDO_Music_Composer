@@ -97,19 +97,27 @@ class IntervalIndex(Generic[T]):
             block_size=block_size,
         )
 
-    def query_closed(self, start: float, end: float) -> IntervalQuery[T]:
+    def query_closed(
+        self,
+        start: float,
+        end: float,
+        *,
+        limit: int | None = None,
+    ) -> IntervalQuery[T]:
         """Return intervals overlapping the viewport's inclusive boundaries.
 
         An item is returned when its stored start is at most ``end`` and its
-        stored end is at least ``start``.
+        stored end is at least ``start``. A limit returns the first matches in
+        the same stable order, without traversing the remaining blocks.
         """
 
         candidate_stop = bisect_right(self.starts, end)
-        if candidate_stop <= 0:
+        if candidate_stop <= 0 or (limit is not None and limit <= 0):
             return IntervalQuery(items=(), inspected_count=0)
 
         last_block = (candidate_stop - 1) // self.block_size
-        matching_blocks: list[int] = []
+        visible: list[T] = []
+        inspected_count = 0
         stack = [(1, 0, self.tree_base)]
         while stack:
             node, node_start, node_stop = stack.pop()
@@ -118,25 +126,21 @@ class IntervalIndex(Generic[T]):
                 or self.block_max_tree[node] < start
             ):
                 continue
-            if node_stop - node_start == 1:
-                matching_blocks.append(node_start)
+            if node_stop - node_start != 1:
+                midpoint = (node_start + node_stop) // 2
+                stack.append((node * 2 + 1, midpoint, node_stop))
+                stack.append((node * 2, node_start, midpoint))
                 continue
-            midpoint = (node_start + node_stop) // 2
-            stack.append((node * 2 + 1, midpoint, node_stop))
-            stack.append((node * 2, node_start, midpoint))
 
-        visible: list[T] = []
-        inspected_count = 0
-        for block_index in matching_blocks:
-            block_start = block_index * self.block_size
-            block_stop = min(
-                candidate_stop,
-                block_start + self.block_size,
-            )
-            inspected_count += block_stop - block_start
+            block_start = node_start * self.block_size
+            block_stop = min(candidate_stop, block_start + self.block_size)
             for item_index in range(block_start, block_stop):
                 if self.ends[item_index] >= start:
                     visible.append(self.items[item_index])
+                    if limit is not None and len(visible) == limit:
+                        inspected_count += item_index - block_start + 1
+                        return IntervalQuery(tuple(visible), inspected_count)
+            inspected_count += block_stop - block_start
         return IntervalQuery(
             items=tuple(visible),
             inspected_count=inspected_count,

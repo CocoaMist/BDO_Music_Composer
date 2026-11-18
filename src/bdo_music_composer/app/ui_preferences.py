@@ -13,21 +13,24 @@ from typing import Any, Mapping, MutableMapping
 
 
 UI_PREFERENCES_KEY = "ui_preferences"
-UI_PREFERENCES_VERSION = 2
+UI_PREFERENCES_VERSION = 3
 
 DEFAULT_UI_PREFERENCES: dict[str, Any] = {
     "version": UI_PREFERENCES_VERSION,
     "workspace": {
         "window_width": 1360,
         "window_height": 820,
-        "window_maximized": False,
         "timeline_zoom_percent": 100,
         "timeline_pan_percent": 0,
         "timeline_loop_enabled": False,
         "reference_volume_percent": 50,
-        "timeline_header_width": 276,
-        "timeline_lane_height": 68,
+        "timeline_header_width": 240,
+        "timeline_lane_height": 64,
         "reference_lane_height": 68,
+        "workbench_editor_percent": 56,
+        "workbench_editor_visible": True,
+        "workbench_inspector_visible": False,
+        "workbench_velocity_visible": True,
     },
     "editor": {
         "window_width": 1440,
@@ -38,7 +41,6 @@ DEFAULT_UI_PREFERENCES: dict[str, Any] = {
         "snap_enabled": True,
         "note_preview_enabled": True,
         "draw_mode_enabled": False,
-        "inspector_mode": "note",
         "loop_enabled": False,
         "velocity_visible": False,
         "velocity_panel_height": 180,
@@ -89,6 +91,7 @@ def normalize_ui_preferences(value: object) -> dict[str, Any]:
         (result["workspace"], workspace, "timeline_header_width", 220, 420),
         (result["workspace"], workspace, "timeline_lane_height", 44, 104),
         (result["workspace"], workspace, "reference_lane_height", 44, 180),
+        (result["workspace"], workspace, "workbench_editor_percent", 25, 75),
         (result["editor"], editor, "window_width", 920, 7680),
         (result["editor"], editor, "window_height", 680, 4320),
         (result["editor"], editor, "horizontal_zoom", 8, 1600),
@@ -102,7 +105,7 @@ def normalize_ui_preferences(value: object) -> dict[str, Any]:
         bounded = _bounded_number(raw.get(key, default), default, minimum, maximum)
         target[key] = bounded if isinstance(target[key], float) else round(bounded)
     for target, raw, keys in (
-        (result["workspace"], workspace, ("window_maximized", "timeline_loop_enabled")),
+        (result["workspace"], workspace, ("timeline_loop_enabled", "workbench_editor_visible", "workbench_inspector_visible", "workbench_velocity_visible")),
         (result["editor"], editor, ("snap_enabled", "note_preview_enabled", "draw_mode_enabled", "loop_enabled", "velocity_visible")),
         (result["transcription"], transcription, ("show_rejected", "show_suppressed", "rhythm_projection_enabled")),
     ):
@@ -113,7 +116,6 @@ def normalize_ui_preferences(value: object) -> dict[str, Any]:
     if isinstance(divisor, int) and not isinstance(divisor, bool) and divisor in {1, 2, 4, 8, 16}:
         result["editor"]["quantize_divisor"] = divisor
     for key, allowed in (
-        ("inspector_mode", {"note", "articulation", "grid"}),
         ("velocity_mode", {"point", "brush"}),
         ("velocity_scope", {"track", "selection"}),
     ):

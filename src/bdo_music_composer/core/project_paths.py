@@ -58,7 +58,12 @@ def user_documents_dir() -> Path:
                 return Path(os.path.expandvars(str(value))).expanduser()
         except (ImportError, OSError, TypeError, ValueError):
             pass
-    return Path.home() / "Documents"
+    try:
+        return Path.home() / "Documents"
+    except RuntimeError:
+        # Restricted launchers can omit the Windows profile variables while
+        # still providing a writable application data directory.
+        return _user_data_dir() / "Documents"
 
 
 def _local_cache_dir(name: str, override_name: str) -> Path:

@@ -50,11 +50,18 @@ def current_working_set_bytes() -> int:
         counters = ProcessMemoryCounters()
         counters.cb = ctypes.sizeof(counters)
         try:
-            process = ctypes.windll.kernel32.GetCurrentProcess()
-            success = ctypes.windll.psapi.GetProcessMemoryInfo(
-                process,
-                ctypes.byref(counters),
-                counters.cb,
+            get_current_process = ctypes.windll.kernel32.GetCurrentProcess
+            get_current_process.argtypes = ()
+            get_current_process.restype = wintypes.HANDLE
+            get_memory_info = ctypes.windll.psapi.GetProcessMemoryInfo
+            get_memory_info.argtypes = (
+                wintypes.HANDLE,
+                ctypes.POINTER(ProcessMemoryCounters),
+                wintypes.DWORD,
+            )
+            get_memory_info.restype = wintypes.BOOL
+            success = get_memory_info(
+                get_current_process(), ctypes.byref(counters), counters.cb
             )
         except (AttributeError, OSError):
             return 0

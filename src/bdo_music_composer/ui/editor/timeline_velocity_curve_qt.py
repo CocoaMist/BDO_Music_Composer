@@ -69,7 +69,9 @@ class TimelineVelocityCurveOverlay(QObject):
         super().__init__(canvas)
         self.canvas = canvas
         self._session: _CurveSession | None = None
-        self._context: _CurveContext | None = None
+        self._activation_target: tuple[
+            TrackState, QRectF, float, float, tuple[float, float] | None
+        ] | None = None
         self._geometry: QRectF | None = None
         self._hit_regions: list[tuple[QRectF, str]] = []
         self._dragging_point: int | None = None
@@ -90,7 +92,7 @@ class TimelineVelocityCurveOverlay(QObject):
 
     def begin_frame(self) -> None:
         self._hit_regions.clear()
-        self._context = None
+        self._activation_target = None
         self._geometry = None
 
     def synchronize_tracks(self, tracks: Sequence[TrackState]) -> None:
@@ -104,17 +106,28 @@ class TimelineVelocityCurveOverlay(QObject):
         ):
             self.cancel()
 
+    def invalidate_tracks(self, track_ids: set[int]) -> None:
+        """Keep unchanged projections across a track-local model commit."""
+
+        for track in self.canvas.tracks:
+            if int(track.track_id) in track_ids:
+                self._note_onsets.pop(id(track), None)
+                self._velocity_traces.pop(id(track), None)
+        self._target_cache_key = None
+        self._target_cache_value = None
+
     def _ensure_track_index(self, track: TrackState) -> None:
         track_key = id(track)
         if track_key in self._note_onsets:
             return
+        projected = project_track_note_refs(track)
         onsets = tuple(
             (float(note.start), index)
-            for index, note in project_track_note_refs(track)
+            for index, note in projected
         )
         self._note_onsets[track_key] = onsets
         velocity_groups: dict[float, list[float]] = {}
-        for note in project_track_notes(track):
+        for _index, note in projected:
             onset = float(note.start)
             key = round(onset, 3)
             group = velocity_groups.setdefault(key, [0.0, 0.0])
@@ -225,12 +238,8 @@ class TimelineVelocityCurveOverlay(QObject):
         visible_duration: float,
         selected_range: tuple[float, float] | None,
     ) -> None:
-        self._context = self._target_context(
-            track,
-            region,
-            visible_start,
-            visible_duration,
-            selected_range,
+        self._activation_target = (
+            track, QRectF(region), visible_start, visible_duration, selected_range,
         )
         session = self._session
         if session is None or session.track is not track:
@@ -265,13 +274,15 @@ class TimelineVelocityCurveOverlay(QObject):
     def _clip_velocity_trace(
         track: TrackState,
         points: tuple[tuple[float, float], ...],
+        *,
+        clips: Sequence[object] | None = None,
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
         """Keep trend-line segments inside independent clips; never bridge gaps."""
 
         from bdo_music_composer.editor.arrangement_clip import track_clips
 
         segments: list[tuple[tuple[float, float], ...]] = []
-        for clip in track_clips(track):
+        for clip in track_clips(track) if clips is None else clips:
             segment = tuple(
                 point for point in points
                 if clip.start_ms <= point[0] <= clip.end_ms
@@ -342,7 +353,10 @@ class TimelineVelocityCurveOverlay(QObject):
         color.setAlpha(126 if active else 62)
         painter.setPen(QPen(color, 1.15, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(color)
-        for segment in self._clip_velocity_trace(track, points):
+        clips = self.canvas._visible_track_clips(
+            track, visible_start, visible_start + visible_duration,
+        )
+        for segment in self._clip_velocity_trace(track, points, clips=clips):
             screens = [
                 QPointF(
                     geometry.left() + (
@@ -380,7 +394,7 @@ class TimelineVelocityCurveOverlay(QObject):
         ):
             painter.setBrush(QColor("#806526" if accent else "#292b2c"))
             painter.setPen(QPen(QColor("#d4ae4f" if accent else "#55595a"), 1.0))
-            painter.drawRoundedRect(rect, 4.0, 4.0)
+            painter.drawRect(rect)
             painter.setPen(QColor("#fff0c8" if accent else "#d4d2cc"))
             painter.drawText(rect, Qt.AlignCenter, label)
             self._hit_regions.append((rect, action))
@@ -515,8 +529,12 @@ class TimelineVelocityCurveOverlay(QObject):
         painter.restore()
 
     def _activate(self) -> None:
-        context = self._context
-        if context is None or not context.note_indices:
+        if self._activation_target is None:
+            return
+        # Selecting a lane only records its view geometry. The note
+        # projection is needed when the curve editor actually opens.
+        context = self._target_context(*self._activation_target)
+        if not context.note_indices:
             return
         timing_notes = list(context.track.notes)
         for index, onset in context.projected_starts:

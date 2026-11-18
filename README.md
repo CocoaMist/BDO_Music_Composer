@@ -1,105 +1,79 @@
-# BDO Music Composer ♪
+<p align="center">
+  <img src="docs/images/readme-cover.webp" width="100%" alt="BDO Music Composer · 月下的编曲室">
+</p>
 
-给《黑色沙漠》作曲玩家准备的本地多轨编辑器。导入 MIDI、拆分和排列 Clip、
-细修音符与力度，最后导出游戏可读的 BDO v9 曲谱。欢迎来写谱
-`(｡•̀ᴗ-)✧`
+<p align="center">
+  <strong>《黑色沙漠》作曲玩家的 Windows 多轨编辑器</strong><br>
+  MIDI 导入 · Clip 编排 · 钢琴卷帘 · BDO v9 导出
+</p>
 
-[简体中文](docs/locales/zh-CN.md) · [English](docs/locales/en.md) ·
-[日本語](docs/locales/ja.md) · [한국어](docs/locales/ko.md)
+<p align="center">
+  <a href="https://github.com/CocoaMist/BDO_Music_Composer/releases/latest"><strong>下载 Windows 版</strong></a> ·
+  <a href="https://github.com/CocoaMist/BDO_Music_Composer/issues">报告问题</a> ·
+  <a href="CHANGELOG.md#unreleased">源码更新</a>
+</p>
 
-[下载 Windows 版](https://github.com/CocoaMist/3007-BDO_Music_Composer/releases/latest) ·
-[查看更新记录](docs/releases/RELEASE_NOTES_V1.3.6.md) ·
-[报告问题](https://github.com/CocoaMist/3007-BDO_Music_Composer/issues)
+<p align="center">
+  <a href="docs/locales/zh-CN.md">简体中文</a> ·
+  <a href="docs/locales/en.md">English</a> ·
+  <a href="docs/locales/ja.md">日本語</a> ·
+  <a href="docs/locales/ko.md">한국어</a>
+</p>
 
-![BDO Music Composer 多轨编排界面](docs/images/readme-timeline.png)
+<p align="center">
+  <a href="#为什么做这个">为什么做这个</a> ·
+  <a href="#写谱时能做什么">写谱时能做什么</a> ·
+  <a href="#怎么开始">怎么开始</a> ·
+  <a href="#源码与许可">源码与许可</a>
+</p>
 
-> **关于稳定版：** 如果游戏内部的曲谱机制没有变化，当前版本大概率会先作为
-> 暂时的长期稳定版维护。之后会优先处理兼容性和确实影响写谱的问题，不为了凑
-> 版本号频繁更新。能安稳写歌，比数字一直往上跳重要一点 `( •̀ ω •́ )✧`
+---
 
-## 这是做什么的？
+## 为什么做这个
 
-BDO Music Composer 负责从“手里有一份 MIDI”到“游戏里能继续检查和演奏”之间
-最麻烦的那段工作。它有多轨时间轴、钢琴卷帘、Clip 编辑、自动保存、本地试听、
-优化与扒谱辅助，也能重新打开已有的 BDO 曲谱。
+我做这个工具，是想让玩《黑色沙漠》的朋友能在本地编曲、试听，再把曲谱带回游戏里一起演奏。手头有一份 MIDI 的时候，想试一下让长笛第二遍再进，或把伴奏那几颗音放轻一点，打开工程就能改。试听、保存和导出都用你改过的那份音符。
 
-最重要的一点很朴素：你现在看见并改过的音符，就是保存、试听和导出的音符。
-程序不会在最后一步偷偷换回最初导入的 MIDI。
+> 薄荷可可维护这个项目，ChatGPT 和 Codex 协助设计、写代码和跑测试。感谢 CN 服务器「彩虹乐队」的玩家把它拿去写歌，还把遇到的问题带回来。
 
-它不是完整 DAW，也不会替你判断一首曲子最终该怎么写。自动功能给建议，决定权
-还是在你手里。
+---
 
-## 下载与上手
+## 写谱时能做什么
 
-普通用户直接从 [GitHub Releases](https://github.com/CocoaMist/3007-BDO_Music_Composer/releases)
-下载 `BDO-Music-Composer.exe`。这是 Windows 单文件程序，不需要另外安装 Python。
+[![多轨编排界面，展示《月灯小调》的六条乐器轨道。](docs/images/readme-workbench.webp)](docs/images/readme-workbench.webp)
 
-1. 新建工程、导入 MIDI，或者打开一份已有 BDO 曲谱。
-2. 在时间轴上移动、裁切、复制和排列 Clip。
-3. 双击 Clip 进入音符编辑器，调整音高、时值、奏法和力度。
-4. 填写有效的 Owner ID，导出后进游戏复核。
+*界面取自源码版。示例乐段为截图专门生成，点图可以放大。*
 
-第一次使用不用把所有按钮都研究完。先导入、试听、改几颗音，再导出一份小曲子，
-很快就能摸清它的脾气啦 `ฅ^•ﻌ•^ฅ`
+- **先排段落** · 在时间轴上移动、切分、复制 Clip，单独调整某个片段、整轨或全曲的力度。
+- **再修音符** · 双击 Clip 打开钢琴卷帘，改音高、时值、奏法和力度。可以边看编排边改音符，也可以把卷帘单独打开。
+- **听一遍再导出** · 在本机试听，也能加载参考音频做对照。完成后导出 BDO v9，进游戏复核乐器和效果。
 
-## 写谱时能用到什么？
+[![钢琴卷帘同屏工作区，展示音符和力度控制。](docs/images/readme-editor.webp)](docs/images/readme-editor.webp)
 
-- **多轨编排：** 框选或多选 Track/Clip，移动、切分、复制、重复、合并；吸附顺序
-  是时间标记、Clip、网格，按住 `Alt` 可以临时绕过吸附。
-- **音符编辑：** 在钢琴卷帘中处理音高、时值、力度、奏法、量化和复制粘贴，
-  普通编辑与 Clip 编辑都能撤销和恢复。
-- **力度控制：** 全局调整作用于整首曲子的力度基线；选择 Track 时批量调整该轨
-  所有 Clip；选择 Clip 时只改当前分块。百分比会写进实际音符，同时保留工程内
-  的还原基线，试听与导出不会再暗中乘一次。
-- **导入与导出：** 支持 MIDI 和 BDO v9。游戏要求的双力度、物理分轨、空尾轨、
-  乐器、Volume 与效果设置都会经过导出校验。
-- **本地试听：** 内置通用试听音色，也可选择合法来源的兼容音源包。试听只用来
-  辅助编辑，最终效果请以游戏内为准。
-- **辅助工具：** MIDI 优化和参考音频扒谱都在本机运行，结果先交给你审阅，不会
-  一键替换整份工程。
+### 创作 Agent
 
-## 音符编辑器
+卡在某句旋律时，可以选一段问它乐句怎么接，或者请它试写一段伴奏。源码版的模型设置可连接 DeepSeek 或 OpenAI 兼容接口，支持自动读取模型列表，也能手动填模型 ID。
 
-![BDO Music Composer 音符编辑器](docs/images/readme-piano-roll.png)
+![DeepSeek 模型设置，右侧可以选择模型和响应方式。](docs/images/readme-model-settings.webp)
 
-界面截图使用英文语言包；Track、乐器名和文件名属于工程数据，不会被翻译。
+使用联网模型时，这一轮的指令和所需曲谱信息会发送给你配置的服务。MIDI 编辑和本机试听可独立使用。
 
-## 用之前请知道
+---
 
-- 这是社区项目，与 Pearl Abyss 没有隶属关系。
-- 工程、Owner ID、设置、缓存和参考音频留在本机；应用没有账户登录、遥测或文件
-  上传。
-- 程序不提供游戏客户端音频的提取、下载或传播功能。外部内容请自行确认来源和
-  授权，具体边界见[内容政策](docs/CONTENT_BOUNDARY.md)。
-- BDO 文件保存的是游戏最终曲谱，不保存 Clip 名字、颜色、选区和百分比基线。
-  想继续完整编辑，请把工程文件也留好。
-- 硬件、声卡驱动和未来游戏版本都可能带来差异。重要作品导出后请进游戏听一遍，
-  这一步不丢人，反而很专业。
+## 怎么开始
 
-## 源码、文档与参与开发
+1. 在下载页取 Windows 版，双击 `BDO-Music-Composer.exe`。单文件版可以直接运行。
+2. 导入 MIDI 或打开已有的 BDO 曲谱，选一段，先按播放听听。
+3. 双击想改的 Clip。改完把工程也存一份，之后还能继续编辑 Clip 和轨道。
+4. 导出时填写有效的 Owner ID，把曲谱带回游戏试听。
 
-源码开发使用 Python 3.12，入口是 `main.py`。环境准备、测试和提交方式见
-[贡献指南](CONTRIBUTING.md)。
+下载页列出已发布版本。上面的同屏工作区和模型设置展示的是仓库源码。[查看未发布改动](CHANGELOG.md#unreleased)
 
-| 想找什么 | 去哪里 |
-|---|---|
-| 中文完整说明 | [简体中文指南](docs/locales/zh-CN.md) |
-| English / 日本語 / 한국어 | [English](docs/locales/en.md) · [日本語](docs/locales/ja.md) · [한국어](docs/locales/ko.md) |
-| 文档总目录 | [docs/README.md](docs/README.md) |
-| 架构与数据流 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Windows 打包 | [docs/WINDOWS_PACKAGING.md](docs/WINDOWS_PACKAGING.md) |
-| Agent 或维护者接手 | [AGENTS.md](AGENTS.md) → [docs/AGENT_HANDOFF.md](docs/AGENT_HANDOFF.md) |
+---
 
-## 谢谢
+## 源码与许可
 
-感谢 CN 服务器「彩虹乐队」玩家参与测试、录屏和反馈。很多看起来不起眼的小问题，
-都是大家真的拿去写歌以后才抓出来的。
+源码入口是 `main.py`，开发环境使用 Python 3.12。想改代码或从源码运行，可以先看[贡献指南](CONTRIBUTING.md)。维护者接手可从 [AGENTS.md](AGENTS.md) 和[接手手册](docs/AGENT_HANDOFF.md)开始。
 
-项目使用 Python、Qt/PySide6、NumPy、SciPy、Mido、Basic Pitch、ONNX Runtime
-等开放项目，也参考了社区对 BDO 曲谱格式的研究。开发过程中使用过 ChatGPT
-协助代码和文档整理；应用本身不接入 OpenAI API，也不包含云端模型运行时。
-完整来源、许可和作者信息见[第三方声明](THIRD_PARTY_NOTICES.md)。
+[文档索引](docs/README.md) · [隐私与本机数据](docs/locales/zh-CN.md#隐私) · [第三方声明](THIRD_PARTY_NOTICES.md)
 
-原创代码使用 [MIT License](LICENSE)。第三方组件继续遵循各自许可。
-
-写谱愉快，游戏里见 ♪
+原创代码使用 [MIT](LICENSE)。这是独立社区项目，《黑色沙漠》及相关游戏素材的权利归各自权利方所有。

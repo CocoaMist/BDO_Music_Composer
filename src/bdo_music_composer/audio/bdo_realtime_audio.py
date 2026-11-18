@@ -14,13 +14,14 @@ import threading
 import time
 import wave
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import (
     CancelledError,
     Future,
     ThreadPoolExecutor,
     TimeoutError as FutureTimeoutError,
 )
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from bdo_music_composer.audio.pcm_wav import (
     pcm_bytes_to_float32,
     stereo_pcm,
 )
+from bdo_music_composer.audio.sample_pcm_paths import mapped_sample_paths, sample_search_roots
 from PySide6.QtCore import QIODevice, QObject, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtMultimedia import QAudio, QAudioFormat, QAudioSink, QMediaDevices
 
@@ -94,6 +96,7 @@ AUDIO_PRESSURE_REFILL_TARGET_RATIO = 0.875
 AUDIO_RENDER_PRESSURE_THRESHOLD = 0.45
 AUDIO_RENDER_BLOCK_FRAMES = 2048
 AUDIO_MIN_RENDER_FRAMES = 1024
+OUTPUT_START_TIMEOUT_SECONDS = 3.0
 # Per-voice interpolation has a fixed NumPy dispatch cost.  At 64 simultaneous
 # voices the 1024-frame refill quantum already approaches the device budget on
 # typical desktop CPUs, while the 2048-frame ceiling remains well inside the
@@ -209,9 +212,18 @@ class _Sample:
     active_frames: int = 0
     arena_offset: int = -1
     arena: np.ndarray | None = field(default=None, repr=False, compare=False)
+    file_revision: tuple[str, int, int] | None = None
 
 
-@dataclass
+def _sample_file_revision(path: Path) -> tuple[str, int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return str(path.absolute()), stat.st_mtime_ns, stat.st_size
+
+
+@dataclass(slots=True)
 class _Event:
     frame: int
     sample: _Sample
@@ -274,6 +286,24 @@ class _Voice:
         repr=False,
         compare=False,
     )
+
+
+type _ProjectMaterial = tuple[list[_Event], dict[tuple[str, int], _Sample], int, list[str], int]
+
+
+@dataclass(frozen=True, slots=True)
+class _PlaybackIndex:
+    frames: np.ndarray
+    end_frames: np.ndarray
+    max_tail_frames: int
+    meter_tracks: tuple[int, ...]
+    aux_sends: tuple[bool, bool, bool]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedPreload:
+    material: _ProjectMaterial
+    index: _PlaybackIndex
 
 
 OUTPUT_LIMIT_THRESHOLD = 0.95
@@ -449,6 +479,7 @@ class _AudioOutputWorker(QObject):
         except Exception as exc:
             self.engine.last_error = str(exc)
         finally:
+            self.engine._output_start_error = self.engine.last_error
             self.engine._output_ready.set()
 
     @Slot()
@@ -575,9 +606,8 @@ class _AudioOutputWorker(QObject):
         free_frames = max(0, bytes_free()) // self.engine._frame_bytes
         queued_frames = max(0, self.engine._buffer_frames - free_frames)
         pending_frames = len(self.pending_pcm) // self.engine._frame_bytes
-        self.engine._set_output_latency_frames(
-            queued_frames + pending_frames
-        )
+        publish = getattr(self.engine, "_publish_device_position", self.engine._set_output_latency_frames)
+        publish(queued_frames + pending_frames)
 
     @Slot()
     def pump(self) -> None:
@@ -589,6 +619,14 @@ class _AudioOutputWorker(QObject):
             return
         self._publish_output_latency()
         if not self.engine._playing:
+            if (
+                self.pending_pcm
+                and getattr(self.engine, "_render_reached_end", False)
+                and not self.engine._paused
+            ):
+                # A partial final device write still owns already-rendered PCM.
+                self._write_pending()
+                self._publish_output_latency()
             return
         if self.sink.state() == QAudio.State.StoppedState:
             self.engine.last_error = f"系统音频输出已停止：{self.sink.error()}"
@@ -632,12 +670,15 @@ class BdoRealtimeAudioEngine(QObject):
         self._lock = threading.RLock()
         self._events: list[_Event] = []
         self._event_frames = np.empty(0, dtype=np.int64)
+        self._event_end_frames = np.empty(0, dtype=np.int64)
         self._max_event_tail_frames = 0
         self._voices: list[_Voice] = []
         self._last_voice_prune_frame: int | None = None
         self._event_index = 0
         self._frame = 0
         self._duration_frames = 0
+        self._transport_end_frame = 0
+        self._render_reached_end = False
         self._playing = False
         # Transport state cannot be inferred from ``_events``: a stopped engine
         # intentionally retains its prepared events so Play can start again.
@@ -651,6 +692,7 @@ class BdoRealtimeAudioEngine(QObject):
         # head. UI playheads subtract this bounded queue so dense multitrack
         # playback follows what the user hears instead of the refill cursor.
         self._output_latency_frames = 0
+        self._output_presented_frame: int | None = None
         self._underruns = 0
         self._voice_steals = 0
         self._render_times_ms: deque[float] = deque(maxlen=240)
@@ -660,6 +702,8 @@ class BdoRealtimeAudioEngine(QObject):
         self._output_thread: QThread | None = None
         self._output_worker: _AudioOutputWorker | None = None
         self._output_ready = threading.Event()
+        self._output_start_error = ""
+        self._output_closing = False
         self._output_reset_serial = 0
         self._output_reset_completed_serial = 0
         # One coordinator preserves project ordering; independent WAV reads and
@@ -669,7 +713,7 @@ class BdoRealtimeAudioEngine(QObject):
         self._executor_lock = threading.Lock()
         self._loader: ThreadPoolExecutor | None = None
         self._decode_pool: ThreadPoolExecutor | None = None
-        self._load_future: Future[tuple[list[_Event], dict[tuple[str, int], _Sample], int, list[str], int]] | None = None
+        self._load_future: Future[_PreparedPreload | _ProjectMaterial] | None = None
         self._load_cancel_event: threading.Event | None = None
         self._format: QAudioFormat | None = None
         self._sample_rate = 48_000
@@ -777,11 +821,26 @@ class BdoRealtimeAudioEngine(QObject):
     def status(self) -> AudioStatus:
         return self.get_status()
 
-    def start(self) -> None:
+    def start(self, *, wait: bool = True) -> None:
+        if self._output_ready.is_set() and self._output_start_error:
+            self.stop()
         if self._output_thread and self._output_thread.isRunning():
-            return
+            if self._output_closing:
+                raise AudioEngineError("音频输出线程启动超时")
+        else:
+            self._begin_output_start()
+        if wait:
+            try:
+                self._wait_for_output(self._output_ready)
+            except AudioEngineError:
+                self.stop()
+                raise
+
+    def _begin_output_start(self) -> None:
         self.last_error = ""
-        self._output_ready.clear()
+        self._output_start_error = ""
+        self._output_closing = False
+        self._output_ready = threading.Event()
         self._output_thread = QThread()
         self._output_worker = _AudioOutputWorker(self)
         self._output_worker.moveToThread(self._output_thread)
@@ -801,12 +860,22 @@ class BdoRealtimeAudioEngine(QObject):
         )
         self._output_thread.finished.connect(self._output_worker.deleteLater)
         self._output_thread.start()
-        if not self._output_ready.wait(3.0):
-            self.stop()
-            raise AudioEngineError("音频输出线程启动超时")
-        if self.last_error:
-            self.stop()
-            raise AudioEngineError(self.last_error)
+
+    def _wait_for_output(
+        self,
+        ready: threading.Event,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
+        deadline = time.monotonic() + OUTPUT_START_TIMEOUT_SECONDS
+        # The preload worker must use the device's negotiated frame rate.
+        # Before startup completes, let a replaced load release the queue.
+        while not ready.wait(PRELOAD_CANCEL_POLL_SECONDS):
+            self._raise_if_preload_cancelled(cancel_event)
+            if time.monotonic() >= deadline:
+                raise AudioEngineError("音频输出线程启动超时")
+        self._raise_if_preload_cancelled(cancel_event)
+        if self._output_start_error:
+            raise AudioEngineError(self._output_start_error)
 
     def _set_output_format(self, audio_format: QAudioFormat) -> None:
         with self._lock:
@@ -834,6 +903,15 @@ class BdoRealtimeAudioEngine(QObject):
         with self._lock:
             self._output_latency_frames = max(0, int(frames))
 
+    def _publish_device_position(self, latency_frames: int) -> None:
+        """Pair the render cursor with its queue depth after the device write."""
+        with self._lock:
+            self._output_latency_frames = max(0, int(latency_frames))
+            if self._output_reset_serial != self._output_reset_completed_serial:
+                return
+            position = max(0, self._frame - self._output_latency_frames)
+            self._output_presented_frame = max(self._output_presented_frame or 0, position)
+
     def _record_underrun(self) -> None:
         with self._lock:
             self._underruns += 1
@@ -858,6 +936,7 @@ class BdoRealtimeAudioEngine(QObject):
         with self._lock:
             self._playing = False
             self._paused = False
+            self._render_reached_end = False
 
     def _mark_output_reset_pending_locked(self) -> None:
         self._output_reset_serial += 1
@@ -882,13 +961,22 @@ class BdoRealtimeAudioEngine(QObject):
             self._last_voice_prune_frame = None
             self._frame = 0
             self._output_latency_frames = 0
+            self._output_presented_frame = None
             self._event_index = 0
+            self._transport_end_frame = 0
+            self._render_reached_end = False
             self._master_gain = 1.0
             self._track_peaks.fill(0.0)
             self._track_block_peaks.fill(0.0)
         if self._output_thread and self._output_thread.isRunning():
+            self._output_closing = True
             self.output_stop_requested.emit()
-            self._output_thread.wait(1000)
+            opening_ms = round(OUTPUT_START_TIMEOUT_SECONDS * 1000) if not self._output_ready.is_set() else 0
+            if not self._output_thread.wait(opening_ms + 1000):
+                # A slow system device may still be opening. Keep ownership
+                # until the already queued close can run on that thread.
+                self._shutdown_preload_executors()
+                return
         self._output_worker = None
         self._output_thread = None
         # ``stop`` is also the final lifecycle hook used by the main window.
@@ -932,13 +1020,17 @@ class BdoRealtimeAudioEngine(QObject):
             self._paused = False
             self._events = []
             self._event_frames = np.empty(0, dtype=np.int64)
+            self._event_end_frames = np.empty(0, dtype=np.int64)
             self._max_event_tail_frames = 0
             self._voices.clear()
             self._last_voice_prune_frame = None
             self._event_index = 0
             self._frame = 0
             self._output_latency_frames = 0
+            self._output_presented_frame = None
             self._duration_frames = 0
+            self._transport_end_frame = 0
+            self._render_reached_end = False
             self._master_gain = 1.0
             self._voice_steals = 0
             self._render_times_ms.clear()
@@ -979,32 +1071,10 @@ class BdoRealtimeAudioEngine(QObject):
         cache_limit_bytes: int = 768 * 1024 * 1024,
     ) -> None:
         """Begin a coordinated, multi-thread WAV cache preload off the GUI."""
-        self.start()
-        with self._lock:
-            previous_cancel = self._load_cancel_event
-            previous_future = self._load_future
-            if previous_cancel is not None:
-                previous_cancel.set()
-            self._load_generation += 1
-            generation = self._load_generation
-            cancel_event = threading.Event()
-            self._load_cancel_event = cancel_event
-            self._preload_loaded = 0
-            self._preload_total = 0
-        if previous_future is not None and not previous_future.done():
-            previous_future.cancel()
-        loader, _decode_pool = self._ensure_preload_executors()
-        future = loader.submit(
+        self._submit_preload(
             self._prepare_project,
             list(tracks), map_path, start_ms, reverb, delay, chorus, cache_limit_bytes,
-            generation, cancel_event,
         )
-        with self._lock:
-            if generation == self._load_generation:
-                self._load_future = future
-            else:
-                cancel_event.set()
-                future.cancel()
 
     def load_procedural_project_async(
         self,
@@ -1021,7 +1091,14 @@ class BdoRealtimeAudioEngine(QObject):
         first run where private game samples are unavailable.
         """
 
-        self.start()
+        self._submit_preload(
+            self._prepare_procedural_project,
+            list(tracks), start_ms, reverb, delay, chorus,
+        )
+
+    def _submit_preload(self, prepare: Callable[..., _ProjectMaterial], *args: Any) -> None:
+        self.start(wait=False)
+        ready = self._output_ready if self._output_thread is not None else None
         with self._lock:
             previous_cancel = self._load_cancel_event
             previous_future = self._load_future
@@ -1035,17 +1112,16 @@ class BdoRealtimeAudioEngine(QObject):
             self._preload_total = 0
         if previous_future is not None and not previous_future.done():
             previous_future.cancel()
+
+        def prepare_with_output() -> _PreparedPreload:
+            if ready is not None:
+                self._wait_for_output(ready, cancel_event)
+            material = prepare(*args, generation, cancel_event)
+            index = self._build_playback_index(material[0], cancel_event)
+            return _PreparedPreload(material, index)
+
         loader, _decode_pool = self._ensure_preload_executors()
-        future = loader.submit(
-            self._prepare_procedural_project,
-            list(tracks),
-            start_ms,
-            reverb,
-            delay,
-            chorus,
-            generation,
-            cancel_event,
-        )
+        future = loader.submit(prepare_with_output)
         with self._lock:
             if generation == self._load_generation:
                 self._load_future = future
@@ -1055,10 +1131,14 @@ class BdoRealtimeAudioEngine(QObject):
 
     def finish_loading(self, start_ms: float) -> dict[str, Any] | None:
         """Commit a completed asynchronous preload; returns ``None`` while loading."""
-        future = self._load_future
-        if future is None:
+        prepared = self._take_ready_preload()
+        if prepared is None:
             return None
-        if not future.done():
+        return self._commit_project(*prepared.material, start_ms=start_ms, index=prepared.index)
+
+    def _take_ready_preload(self) -> _PreparedPreload | None:
+        future = self._load_future
+        if future is None or not future.done():
             return None
         with self._lock:
             if self._load_future is not future:
@@ -1070,10 +1150,14 @@ class BdoRealtimeAudioEngine(QObject):
         except (CancelledError, _LoadCancelled):
             return None
         except AudioEngineError:
+            if self._output_start_error:
+                self.stop()
             raise
         except Exception as exc:
             raise AudioEngineError(f"游戏音源预取失败：{exc}") from exc
-        return self._commit_project(*prepared, start_ms=start_ms)
+        if isinstance(prepared, _PreparedPreload):
+            return prepared
+        return _PreparedPreload(prepared, self._build_playback_index(prepared[0]))
 
     def finish_audition_loading(self) -> dict[str, Any] | None:
         """Hand a prepared key audition to the live mixer without stopping output.
@@ -1082,22 +1166,11 @@ class BdoRealtimeAudioEngine(QObject):
         ready, old voices receive a short release and the new key a short attack;
         the device stream remains continuous, avoiding reset-induced gaps.
         """
-        future = self._load_future
-        if future is None or not future.done():
+        prepared = self._take_ready_preload()
+        if prepared is None:
             return None
-        with self._lock:
-            if self._load_future is not future:
-                return None
-            self._load_future = None
-            self._load_cancel_event = None
-        try:
-            events, cache, cache_bytes, unverified, duration = future.result()
-        except (CancelledError, _LoadCancelled):
-            return None
-        except AudioEngineError:
-            raise
-        except Exception as exc:
-            raise AudioEngineError(f"游戏音源预取失败：{exc}") from exc
+        events, cache, cache_bytes, unverified, duration = prepared.material
+        index = prepared.index
 
         fade_frames = max(1, round(self._sample_rate * AUDITION_CROSSFADE_MS / 1000.0))
         with self._lock:
@@ -1106,17 +1179,12 @@ class BdoRealtimeAudioEngine(QObject):
                 voice.release_start_age = voice.age_frames
                 voice.release_frames = fade_frames
 
-            self._events = events
-            self._event_frames = np.fromiter(
-                (event.frame for event in events), dtype=np.int64, count=len(events)
-            )
-            self._max_event_tail_frames = max(
-                (self._event_audible_frames(event) for event in events),
-                default=0,
-            )
+            self._install_playback_index(events, index)
             self._event_index = 0
             self._frame = 0
-            self._configure_preview_effects(events)
+            self._output_presented_frame = None
+            self._render_reached_end = False
+            self._configure_preview_effects(events, index.aux_sends)
             self._duration_frames = max(
                 duration + self._preview_effects.tail_frames(),
                 fade_frames,
@@ -1126,14 +1194,6 @@ class BdoRealtimeAudioEngine(QObject):
             self._sample_arena = self._shared_sample_arena(cache)
             self._preload_loaded = self._preload_total
             self._unverified = unverified
-
-            meter_slots = max((event.track_slot for event in events), default=-1) + 1
-            self._track_meter_ids = [-1] * meter_slots
-            for event in events:
-                if event.track_slot >= 0:
-                    self._track_meter_ids[event.track_slot] = event.track_id
-            self._track_peaks = np.zeros(meter_slots, dtype=np.float32)
-            self._track_block_peaks = np.zeros(meter_slots, dtype=np.float32)
 
             while self._event_index < len(events) and events[self._event_index].frame <= 0:
                 self._start_event(events[self._event_index], fade_in_frames=fade_frames)
@@ -1171,6 +1231,7 @@ class BdoRealtimeAudioEngine(QObject):
         self,
         instrument_id: int,
         *,
+        rate: int,
         percussion: bool,
         percussion_pitch: int = 60,
     ) -> _Sample:
@@ -1183,7 +1244,6 @@ class BdoRealtimeAudioEngine(QObject):
         remains a generic preview rather than evidence of BDO game timbre.
         """
 
-        rate = max(8_000, int(self._sample_rate))
         family = self._procedural_instrument_family(instrument_id)
         one_shot = percussion or family in {"piano", "pluck", "harp", "handpan"}
         duration_seconds = 1.4 if percussion else (2.0 if one_shot else 1.0)
@@ -1309,11 +1369,17 @@ class BdoRealtimeAudioEngine(QObject):
 
         del start_ms
         self._raise_if_preload_cancelled(cancel_event)
+        with self._lock:
+            # A committed cache is replaced as a whole. Reuse only matching,
+            # immutable procedural samples from the previous preparation.
+            previous_cache = self._cache
+            rate = max(8_000, int(self._sample_rate))
         cache: dict[tuple[str, int], _Sample] = {}
         events: list[_Event] = []
         duration = 0
-        rate = max(8_000, int(self._sample_rate))
         release_frames = max(1, round(rate * 0.08))
+        percussion_floor_frames = round(rate * 0.18)
+        sustain_loop = (round(rate * 0.20), round(rate * 0.80))
         master_settings = PreviewEffectSettings.from_legacy(
             reverb,
             delay,
@@ -1327,12 +1393,15 @@ class BdoRealtimeAudioEngine(QObject):
                 instrument_id in {0x04, 0x05, 0x0D}
             )
             family = self._procedural_instrument_family(instrument_id)
+            one_shot_family = family in {"piano", "pluck", "harp", "handpan"}
             melodic_key = ("procedural", instrument_id)
             sample = cache.get(melodic_key) if not percussion else None
             if not percussion and sample is None:
-                sample = self._procedural_sample(
-                    instrument_id, percussion=False
-                )
+                sample = previous_cache.get(melodic_key)
+                if sample is None or sample.rate != rate:
+                    sample = self._procedural_sample(
+                        instrument_id, rate=rate, percussion=False
+                    )
                 cache[melodic_key] = sample
             track_id = int(getattr(track, "track_id", track_slot))
             track_gain = track_volume_preview_gain(
@@ -1357,7 +1426,7 @@ class BdoRealtimeAudioEngine(QObject):
                 delay_send,
                 chorus_send,
             ))
-            duration_scale = 1.0
+            default_ntype = getattr(track, "articulation_type", 0) or 0
             for note_index, note in enumerate(project_track_notes(track)):
                 if note_index % 256 == 0:
                     self._raise_if_preload_cancelled(cancel_event)
@@ -1370,16 +1439,11 @@ class BdoRealtimeAudioEngine(QObject):
                     1,
                     round(
                         max(1.0, float(getattr(note, "dur", 0.0)))
-                        * max(0.01, duration_scale)
                         * rate
                         / 1000.0
                     ),
                 )
-                ntype = int(
-                    getattr(note, "ntype", 0)
-                    or getattr(track, "articulation_type", 0)
-                    or 0
-                )
+                ntype = int(getattr(note, "ntype", 0) or default_ntype)
                 if percussion:
                     percussion_pitch = max(
                         0, min(127, int(getattr(note, "pitch", 60)))
@@ -1390,16 +1454,19 @@ class BdoRealtimeAudioEngine(QObject):
                     )
                     sample = cache.get(percussion_key)
                     if sample is None:
-                        sample = self._procedural_sample(
-                            instrument_id,
-                            percussion=True,
-                            percussion_pitch=percussion_pitch,
-                        )
+                        sample = previous_cache.get(percussion_key)
+                        if sample is None or sample.rate != rate:
+                            sample = self._procedural_sample(
+                                instrument_id,
+                                rate=rate,
+                                percussion=True,
+                                percussion_pitch=percussion_pitch,
+                            )
                         cache[percussion_key] = sample
                     ratio = 1.0
                     audible_frames = max(
                         note_duration,
-                        min(sample.frames, round(rate * 0.18)),
+                        min(sample.frames, percussion_floor_frames),
                     )
                     audible_frames = min(audible_frames, sample.frames)
                     fade_out_frames = min(release_frames, audible_frames)
@@ -1410,7 +1477,7 @@ class BdoRealtimeAudioEngine(QObject):
                     # The bounded MIDI key already bounds the ratio. Clipping
                     # it to three octaves silently repitched low/high notes.
                     ratio = 2.0 ** ((pitch - 69) / 12.0)
-                    if family in {"piano", "pluck", "harp", "handpan"}:
+                    if one_shot_family:
                         audible_frames = min(
                             note_duration + release_frames,
                             max(1, round(sample.frames / ratio)),
@@ -1418,8 +1485,7 @@ class BdoRealtimeAudioEngine(QObject):
                         loop_start = loop_end = 0
                     else:
                         audible_frames = note_duration + release_frames
-                        loop_start = round(rate * 0.20)
-                        loop_end = round(rate * 0.80)
+                        loop_start, loop_end = sustain_loop
                     fade_out_frames = release_frames
                 velocity = max(
                     0,
@@ -1494,6 +1560,9 @@ class BdoRealtimeAudioEngine(QObject):
         )
         self._raise_if_preload_cancelled(cancel_event)
         banks: dict[str, list[dict]] = payload.get("banks", {})
+        configured_root = self.source_config.get("audio_root")
+        audio_root = Path(configured_root) if configured_root else None
+        sample_roots = sample_search_roots(mapping_file, audio_root)
         cache: dict[tuple[str, int], _Sample] = {}
         events: list[_Event] = []
         unverified: set[str] = set()
@@ -1509,18 +1578,18 @@ class BdoRealtimeAudioEngine(QObject):
         resolved: list[
             tuple[
                 Any, int, int, int, int, str, dict, tuple[str, int],
-                float, int, int, float, float, float, float,
+                int, int, float, float, float, float,
             ]
         ] = []
         selection_requests: list[
             tuple[
                 float, int, int, Any, int, int, int, int, str,
-                tuple[dict, ...], float, int, float, float, float, float,
+                tuple[dict, ...], int, float, float, float, float,
             ]
         ] = []
         source_candidates: dict[
             tuple[str, int],
-            tuple[Path, Path],
+            tuple[Path, ...],
         ] = {}
         zone_cache: dict[
             tuple[int, str, int, int, int],
@@ -1594,7 +1663,6 @@ class BdoRealtimeAudioEngine(QObject):
                     ntype,
                     selected_bank,
                     variants,
-                    float(getattr(track, "duration_scale", 1.0)),
                     track_id,
                     track_preview_gain,
                     reverb_send,
@@ -1617,7 +1685,6 @@ class BdoRealtimeAudioEngine(QObject):
             ntype,
             bank,
             variants,
-            duration_scale,
             track_id,
             track_preview_gain,
             reverb_send,
@@ -1652,28 +1719,31 @@ class BdoRealtimeAudioEngine(QObject):
                     )
             key = (bank, int(row["source_id"]))
             if key not in source_candidates:
-                source_candidates.setdefault(
-                    key,
-                    (
-                        Path(row["wav_path"]),
-                        Path(self.source_config["audio_root"])
-                        / "乐器_WAV"
-                        / bank
-                        / f"{row['source_id']}.wav",
-                    ),
+                candidates = mapped_sample_paths(Path(row["wav_path"]), sample_roots)
+                fallback = (audio_root or Path.cwd()) / "乐器_WAV" / bank / f"{row['source_id']}.wav"
+                source_candidates[key] = (
+                    candidates if fallback in candidates else (*candidates, fallback)
                 )
             resolved.append((
                 note, velocity, pitch, instrument_id, ntype, bank, row, key,
-                duration_scale, track_slot, track_id, track_preview_gain,
+                track_slot, track_id, track_preview_gain,
                 reverb_send, delay_send, chorus_send,
             ))
 
         sources = {
-            key: primary if primary.is_file() else fallback
-            for key, (primary, fallback) in source_candidates.items()
+            key: next((candidate for candidate in paths[:-1] if candidate.is_file()), paths[-1])
+            for key, paths in source_candidates.items()
         }
+        revisions = {key: _sample_file_revision(path) for key, path in sources.items()}
         with self._lock:
-            cache.update({key: self._cache[key] for key in sources if key in self._cache})
+            cache.update({
+                key: self._cache[key]
+                for key, revision in revisions.items()
+                if key in self._cache and (
+                    self._cache[key].file_revision is None
+                    or self._cache[key].file_revision == revision
+                )
+            })
         if load_generation is not None:
             with self._lock:
                 if load_generation == self._load_generation:
@@ -1709,7 +1779,7 @@ class BdoRealtimeAudioEngine(QObject):
             # Consume in source order for deterministic errors and cache limits.
             # At most one worker-window is submitted, so abandoning a project
             # cannot leave hundreds of stale decodes ahead of the next request.
-            for key, _path in missing_sources:
+            for key, path in missing_sources:
                 future = futures[key]
                 while True:
                     self._raise_if_preload_cancelled(cancel_event)
@@ -1724,7 +1794,10 @@ class BdoRealtimeAudioEngine(QObject):
                 cache_bytes += sample.pcm.nbytes
                 if cache_bytes > cache_limit_bytes:
                     raise AudioEngineError(f"项目预取样本超过 {cache_limit_bytes // 1024 // 1024} MiB 缓存上限")
-                cache[key] = sample
+                revision = revisions[key]
+                if revision is None or revision != _sample_file_revision(path):
+                    revision = (str(path.absolute()), -1, -1)
+                cache[key] = replace(sample, file_revision=revision)
                 if load_generation is not None:
                     with self._lock:
                         if load_generation == self._load_generation:
@@ -1746,7 +1819,7 @@ class BdoRealtimeAudioEngine(QObject):
         )
         for resolved_index, (
             note, velocity, pitch, _instrument_id, ntype, _bank, row, key,
-            duration_scale, track_slot, track_id, track_preview_gain,
+            track_slot, track_id, track_preview_gain,
             reverb_send, delay_send, chorus_send,
         ) in enumerate(resolved):
             if resolved_index % 512 == 0:
@@ -1762,7 +1835,6 @@ class BdoRealtimeAudioEngine(QObject):
                 1,
                 round(
                     float(getattr(note, "dur", 0.0))
-                    * duration_scale
                     * self._sample_rate / 1000.0
                 ),
             )
@@ -1958,6 +2030,7 @@ class BdoRealtimeAudioEngine(QObject):
                 active_frames=int(sample.active_frames),
                 arena_offset=offset,
                 arena=arena,
+                file_revision=sample.file_revision,
             )
             offset = end
         return packed
@@ -1982,7 +2055,47 @@ class BdoRealtimeAudioEngine(QObject):
         if cancel_event is not None and cancel_event.is_set():
             raise _LoadCancelled()
 
-    def _configure_preview_effects(self, events: list[_Event]) -> None:
+    def _build_playback_index(
+        self,
+        events: list[_Event],
+        cancel_event: threading.Event | None = None,
+    ) -> _PlaybackIndex:
+        """Build the immutable seek, meter, and effects indexes before handoff."""
+        frames = np.fromiter((event.frame for event in events), dtype=np.int64, count=len(events))
+        frames.setflags(write=False)
+        end_frames = np.empty_like(frames)
+        max_tail_frames = 0
+        meter_slots: dict[int, int] = {}
+        reverb = delay = chorus = False
+        for offset, event in enumerate(events):
+            if offset % 512 == 0:
+                self._raise_if_preload_cancelled(cancel_event)
+            audible_frames = self._event_audible_frames(event)
+            end_frames[offset] = event.frame + audible_frames
+            max_tail_frames = max(max_tail_frames, audible_frames)
+            if event.track_slot >= 0:
+                meter_slots[event.track_slot] = event.track_id
+            reverb = reverb or event.reverb_send > 0.0
+            delay = delay or event.delay_send > 0.0
+            chorus = chorus or event.chorus_send > 0.0
+        meter_tracks = tuple(meter_slots.get(slot, -1) for slot in range(max(meter_slots, default=-1) + 1))
+        end_frames.setflags(write=False)
+        return _PlaybackIndex(frames, end_frames, max_tail_frames, meter_tracks, (reverb, delay, chorus))
+
+    def _install_playback_index(self, events: list[_Event], index: _PlaybackIndex) -> None:
+        self._events = events
+        self._event_frames = index.frames
+        self._event_end_frames = index.end_frames
+        self._max_event_tail_frames = index.max_tail_frames
+        self._track_meter_ids = list(index.meter_tracks)
+        self._track_peaks = np.zeros(len(index.meter_tracks), dtype=np.float32)
+        self._track_block_peaks = np.zeros(len(index.meter_tracks), dtype=np.float32)
+
+    def _configure_preview_effects(
+        self,
+        events: list[_Event],
+        aux_sends: tuple[bool, bool, bool] | None = None,
+    ) -> None:
         """Prepare the verified Aux topology and unverified local DSP curve."""
 
         if events:
@@ -1998,11 +2111,18 @@ class BdoRealtimeAudioEngine(QObject):
             )
         else:
             settings = PreviewEffectSettings()
+        if aux_sends is None:
+            aux_sends = (
+                any(event.reverb_send > 0.0 for event in events),
+                any(event.delay_send > 0.0 for event in events),
+                any(event.chorus_send > 0.0 for event in events),
+            )
+        reverb, delay, chorus = aux_sends
         self._preview_effects.configure(
             settings,
-            reverb_send=any(event.reverb_send > 0.0 for event in events),
-            delay_send=any(event.delay_send > 0.0 for event in events),
-            chorus_send=any(event.chorus_send > 0.0 for event in events),
+            reverb_send=reverb,
+            delay_send=delay,
+            chorus_send=chorus,
         )
 
     def _commit_project(
@@ -2014,21 +2134,20 @@ class BdoRealtimeAudioEngine(QObject):
         duration: int,
         *,
         start_ms: float,
+        index: _PlaybackIndex | None = None,
     ) -> dict[str, Any]:
+        if index is None:
+            index = self._build_playback_index(events)
         with self._lock:
-            self._configure_preview_effects(events)
+            self._configure_preview_effects(events, index.aux_sends)
             duration += self._preview_effects.tail_frames()
-            self._events = events
-            self._event_frames = np.fromiter((event.frame for event in events), dtype=np.int64, count=len(events))
-            self._max_event_tail_frames = max(
-                (self._event_audible_frames(event) for event in events),
-                default=0,
-            )
+            self._install_playback_index(events, index)
             self._voices = []
             self._event_index = 0
             self._frame = round(max(0.0, start_ms) * self._sample_rate / 1000.0)
             self._output_latency_frames = 0
             self._duration_frames = duration
+            self._transport_end_frame = 0
             self._cache = cache
             self._cache_bytes = cache_bytes
             self._sample_arena = self._shared_sample_arena(cache)
@@ -2040,13 +2159,6 @@ class BdoRealtimeAudioEngine(QObject):
             self._render_times_ms.clear()
             self._render_loads.clear()
             self._unverified = unverified
-            meter_slots = max((event.track_slot for event in events), default=-1) + 1
-            self._track_meter_ids = [-1] * meter_slots
-            for event in events:
-                if event.track_slot >= 0:
-                    self._track_meter_ids[event.track_slot] = event.track_id
-            self._track_peaks = np.zeros(meter_slots, dtype=np.float32)
-            self._track_block_peaks = np.zeros(meter_slots, dtype=np.float32)
             self._seek_locked(self._frame)
             self._playing = False
             self._paused = False
@@ -2105,14 +2217,15 @@ class BdoRealtimeAudioEngine(QObject):
     def play(self) -> None:
         self.start()
         with self._lock:
-            self._playing = bool(self._events)
+            self._playing = bool(self._events) and not self._render_reached_end
             self._paused = False
-        if self._playing:
+            resume = self._playing or self._device_drain_pending_locked()
+        if resume:
             self.output_resume_requested.emit()
 
     def pause(self) -> None:
         with self._lock:
-            if self._playing:
+            if self._playing or self._device_drain_pending_locked():
                 self._playing = False
                 self._paused = True
         if self._output_thread and self._output_thread.isRunning():
@@ -2128,15 +2241,32 @@ class BdoRealtimeAudioEngine(QObject):
         if self._output_thread and self._output_thread.isRunning():
             self.output_reset_requested.emit()
 
+    def set_transport_end_ms(self, position_ms: float) -> None:
+        """Keep the mixed-preview clock alive through a later reference end."""
+        with self._lock:
+            position = position_ms if math.isfinite(position_ms) else 0.0
+            self._transport_end_frame = round(max(0.0, position) * self._sample_rate / 1000.0)
+            if self._render_reached_end and self._frame < self._transport_end_frame:
+                self._render_reached_end = False
+                self._playing = bool(self._events) and not self._paused
+
+    def _device_drain_pending_locked(self) -> bool:
+        return (
+            self._render_reached_end
+            and self._output_presented_frame is not None
+            and self._output_presented_frame < max(self._duration_frames, self._transport_end_frame)
+        )
+
     def _seek_locked(self, frame: int) -> None:
         self._frame = frame
+        self._output_presented_frame = None
+        self._render_reached_end = False
         self._last_voice_prune_frame = None
-        if len(self._event_frames) != len(self._events):
-            self._event_frames = np.fromiter((event.frame for event in self._events), dtype=np.int64, count=len(self._events))
-            self._max_event_tail_frames = max(
-                (self._event_audible_frames(event) for event in self._events),
-                default=0,
-            )
+        if len(self._event_end_frames) != len(self._events):
+            index = self._build_playback_index(self._events)
+            self._event_frames = index.frames
+            self._event_end_frames = index.end_frames
+            self._max_event_tail_frames = index.max_tail_frames
         self._event_index = int(np.searchsorted(self._event_frames, frame, side="left"))
         self._voices = []
         earliest_frame = frame - self._max_event_tail_frames
@@ -2147,10 +2277,12 @@ class BdoRealtimeAudioEngine(QObject):
                 side="left",
             )
         )
-        for event in self._events[first_event:self._event_index]:
-            age_frames = max(0, frame - event.frame)
-            if age_frames < self._event_audible_frames(event):
-                self._start_event(event, age_frames)
+        # An isolated long sustain can widen the search range across many
+        # short notes. Only reconstruct events still alive at the target.
+        sounding = np.flatnonzero(self._event_end_frames[first_event:self._event_index] > frame)
+        for offset in sounding:
+            event = self._events[first_event + int(offset)]
+            self._start_event(event, frame - event.frame)
         self._voices[:] = [
             voice
             for voice in self._voices
@@ -3541,9 +3673,11 @@ class BdoRealtimeAudioEngine(QObject):
         # voices, so no per-frame prune decision survives this boundary.
         self._last_voice_prune_frame = None
         self._frame = block_end
-        if self._frame >= self._duration_frames and not self._voices:
+        end_frame = max(self._duration_frames, self._transport_end_frame)
+        if self._frame >= end_frame and not self._voices:
             self._playing = False
             self._paused = False
+            self._render_reached_end = True
         if self._capture_track_peaks and self._track_peaks.size:
             np.maximum(self._track_peaks, self._track_block_peaks, out=self._track_peaks)
         if self._preview_effects.active:
@@ -3565,11 +3699,19 @@ class BdoRealtimeAudioEngine(QObject):
 
     def get_status(self) -> AudioStatus:
         with self._lock:
-            state = "playing" if self._playing else ("paused" if self._paused else "stopped")
+            if self._paused:
+                state = "paused"
+            elif self._playing or self._device_drain_pending_locked():
+                state = "playing"
+            else:
+                state = "stopped"
             sample_rate = self._sample_rate
             frame = self._frame
             output_latency_frames = self._output_latency_frames
-            duration_frames = self._duration_frames
+            presented_frame = self._output_presented_frame
+            duration_frames = max(self._duration_frames, self._transport_end_frame)
+            if presented_frame is not None and self._render_reached_end:
+                presented_frame = min(presented_frame, duration_frames)
             buffer_frames = self._buffer_frames
             cache_bytes = self._cache_bytes
             preload_loaded = self._preload_loaded
@@ -3599,7 +3741,10 @@ class BdoRealtimeAudioEngine(QObject):
             if ordered_loads
             else 0.0
         )
-        audible_frame = max(0, frame - output_latency_frames)
+        audible_frame = (
+            presented_frame if presented_frame is not None
+            else max(0, frame - output_latency_frames)
+        )
         return AudioStatus(
             state=state,
             position_ms=audible_frame * 1000.0 / sample_rate,

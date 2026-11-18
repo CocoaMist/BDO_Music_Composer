@@ -335,6 +335,9 @@ class ArrangementClipHostMixin:
                 if int(editor.track.track_id) in updated_ids:
                     editor._clip_live_snapshot_pushed = False
         self._autosave_project(reason, immediate=True)
+        record_usage = getattr(self, "_record_usage_feature", None)
+        if record_usage is not None:
+            record_usage("arrangement_edit")
 
     def _ensure_clip_editor_project_snapshot(self, editor) -> None:
         if bool(getattr(editor, "_clip_live_snapshot_pushed", False)):
@@ -540,6 +543,7 @@ class ArrangementClipHostMixin:
         except (TypeError, ValueError) as exc:
             self.show_toast(trf("无法复制片段：{error}", error=exc), kind="error")
             return
+        self.timeline.clip_paste_available = True
         self.show_toast(tr("片段已复制"), kind="success")
 
     def _duplicate_timeline_clip(self, track, clip_id: str) -> None:

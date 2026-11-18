@@ -52,7 +52,6 @@ class SpectrogramSource:
 class _SpectrogramSpec:
     key: EvidenceTileKey
     generation: int
-    viewport_generation: int
     time_start_ms: float
     time_end_ms: float
     cancel_event: threading.Event
@@ -79,7 +78,7 @@ AudioSliceLoader = Callable[
 def _source_cache_key(path: Path) -> str:
     stat = path.stat()
     identity = (
-        f"{path.resolve(strict=False)}\0{stat.st_size}\0{stat.st_mtime_ns}"
+        f"{path.resolve(strict=False)}\0{stat.st_size}\0{stat.st_mtime_ns}\0{stat.st_ino}"
     ).encode("utf-8", "surrogatepass")
     return hashlib.sha256(identity).hexdigest()[:24]
 
@@ -230,12 +229,11 @@ class SpectrogramTileController(QObject):
         self.audio_slice_loader = audio_slice_loader or _read_audio_slice
         self._validate_audio_source = audio_slice_loader is None
         self._generation = 0
-        self._viewport_generation = 0
         self._viewport_keys: frozenset[EvidenceTileKey] = frozenset()
-        self._pending: set[tuple[int, int, EvidenceTileKey]] = set()
+        self._pending: dict[EvidenceTileKey, _SpectrogramSpec] = {}
+        self._running: set[_SpectrogramSpec] = set()
         self._unavailable: set[tuple[int, EvidenceTileKey]] = set()
         self._source: SpectrogramSource | None = None
-        self._cancel_event = threading.Event()
         self._closed = True
 
     @property
@@ -251,17 +249,18 @@ class SpectrogramTileController(QObject):
         return self._source.cache_key if self._source is not None else ""
 
     def _invalidate_pending_work(self) -> None:
-        self._cancel_event.set()
-        self.thread_pool.clear()
+        for spec in self._pending.values():
+            spec.cancel_event.set()
         self._pending.clear()
-        self._cancel_event = threading.Event()
 
     def _set_viewport(self, keys: frozenset[EvidenceTileKey]) -> None:
         if keys == self._viewport_keys:
             return
-        self._viewport_generation += 1
+        # A scroll can shift just one tile at the viewport edge. Keep shared
+        # work alive and drop obsolete queued tiles before they become workers.
+        for key in self._pending.keys() - keys:
+            self._pending.pop(key).cancel_event.set()
         self._viewport_keys = keys
-        self._invalidate_pending_work()
 
     def begin_source(
         self,
@@ -276,7 +275,6 @@ class SpectrogramTileController(QObject):
             validate_reference_audio_file(path)
         self._invalidate_pending_work()
         self._generation += 1
-        self._viewport_generation += 1
         self._viewport_keys = frozenset()
         duration = float(duration_ms)
         self._source = SpectrogramSource(
@@ -314,7 +312,6 @@ class SpectrogramTileController(QObject):
 
         if self._closed:
             return
-        self._viewport_generation += 1
         self._viewport_keys = frozenset()
         self._invalidate_pending_work()
 
@@ -382,22 +379,29 @@ class SpectrogramTileController(QObject):
                 continue
             if not update_viewport:
                 continue
-            pending_key = (
-                requested_generation,
-                self._viewport_generation,
-                key,
-            )
             unavailable_key = (requested_generation, key)
-            if pending_key in self._pending or unavailable_key in self._unavailable:
+            if key in self._pending or unavailable_key in self._unavailable:
                 continue
-            spec = _SpectrogramSpec(
+            self._pending[key] = _SpectrogramSpec(
                 key,
                 requested_generation,
-                self._viewport_generation,
                 key.tile_index * TILE_DURATION_MS,
                 (key.tile_index + 1) * TILE_DURATION_MS,
-                self._cancel_event,
+                threading.Event(),
             )
+        if update_viewport:
+            self._dispatch_pending()
+        return tuple(ready)
+
+    def _dispatch_pending(self) -> None:
+        source = self._source
+        if self._closed or source is None:
+            return
+        for spec in self._pending.values():
+            if len(self._running) >= self.thread_pool.maxThreadCount():
+                break
+            if spec in self._running:
+                continue
             worker = _SpectrogramRunnable(
                 source,
                 spec,
@@ -407,47 +411,29 @@ class SpectrogramTileController(QObject):
                 self._worker_finished,
                 Qt.ConnectionType.QueuedConnection,
             )
-            self._pending.add(pending_key)
+            self._running.add(spec)
             self.thread_pool.start(worker)
-        ready.sort(key=lambda tile: tile.time_start_ms)
-        return tuple(ready)
 
     @Slot(object)
     def _worker_finished(self, result: _SpectrogramResult) -> None:
-        pending_key = (
-            result.spec.generation,
-            result.spec.viewport_generation,
-            result.spec.key,
-        )
-        self._pending.discard(pending_key)
-        source = self._source
-        if (
-            self._closed
-            or source is None
-            or result.spec.generation != self._generation
-            or result.spec.key.cache_key != source.cache_key
-            or result.spec.viewport_generation != self._viewport_generation
-        ):
-            return
-        if result.cancelled:
-            return
-        unavailable_key = (result.spec.generation, result.spec.key)
-        if result.tile is None:
-            self._unavailable.add(unavailable_key)
-            if result.spec.key in self._viewport_keys and result.error:
-                self.tile_failed.emit(result.error)
-            return
-        self.cache.put(result.tile)
-        if result.spec.key in self._viewport_keys:
-            self.tile_ready.emit(result.tile)
+        spec = result.spec
+        self._running.discard(spec)
+        if self._pending.get(spec.key) is spec:
+            del self._pending[spec.key]
+            if not result.cancelled:
+                if result.tile is None:
+                    self._unavailable.add((spec.generation, spec.key))
+                    if result.error:
+                        self.tile_failed.emit(result.error)
+                else:
+                    self.cache.put(result.tile)
+                    self.tile_ready.emit(result.tile)
+        self._dispatch_pending()
 
     def close(self) -> None:
         self._closed = True
-        self._cancel_event.set()
-        self.thread_pool.clear()
-        self._pending.clear()
+        self._invalidate_pending_work()
         self._generation += 1
-        self._viewport_generation += 1
         self._viewport_keys = frozenset()
         self._source = None
         self._unavailable.clear()

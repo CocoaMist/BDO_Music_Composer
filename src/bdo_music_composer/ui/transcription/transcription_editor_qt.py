@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QPainter,
     QPalette,
     QPen,
+    QPixmap,
 )
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -164,10 +165,12 @@ class TranscriptionWaveformLane(QWidget):
         self.setMouseTracking(True)
         self._canvas = canvas
         self._reference_audio: object | None = None
-        self._source_connections: list[tuple[object, object]] = []
+        self._source_signal = None
         self._fallback_audio_offset_ms = 0.0
         self._playhead_ms: float | None = None
         self._time_range: tuple[float, float] | None = None
+        self._waveform_layer_key: tuple[float, ...] | None = None
+        self._waveform_layer = QPixmap()
 
     @property
     def reference_audio(self) -> object | None:
@@ -188,43 +191,34 @@ class TranscriptionWaveformLane(QWidget):
 
     def set_reference_audio(self, controller: object | None) -> None:
         if controller is self._reference_audio:
-            self.update()
             return
         self._disconnect_reference_audio()
         self._reference_audio = controller
         if controller is not None:
-            for signal_name in (
-                "changed",
-                "timeline_changed",
-                "file_changed",
-                "offset_changed",
-            ):
-                signal = getattr(controller, signal_name, None)
-                if signal is None or not hasattr(signal, "connect"):
-                    continue
-                slot = self._reference_audio_changed
-                try:
-                    signal.connect(slot)
-                except (RuntimeError, TypeError):
-                    continue
-                self._source_connections.append((signal, slot))
-        self.update()
+            self._source_signal = getattr(controller, "timeline_changed", None)
+            if self._source_signal is None:
+                self._source_signal = getattr(controller, "changed", None)
+            if self._source_signal is not None:
+                self._source_signal.connect(self._reference_audio_changed)
+        self._reference_audio_changed()
 
     def release_reference_audio(self) -> None:
         """Detach controller signals without affecting playback or decoding."""
         self._disconnect_reference_audio()
         self._reference_audio = None
-        self.update()
+        self._reference_audio_changed()
 
     def _disconnect_reference_audio(self) -> None:
-        for signal, slot in self._source_connections:
+        if self._source_signal is not None:
             try:
-                signal.disconnect(slot)
+                self._source_signal.disconnect(self._reference_audio_changed)
             except (RuntimeError, TypeError):
                 pass
-        self._source_connections.clear()
+            self._source_signal = None
 
     def _reference_audio_changed(self, *_args: object) -> None:
+        self._waveform_layer_key = None
+        self._waveform_layer = QPixmap()
         self.update()
 
     def set_audio_offset_ms(self, offset_ms: float) -> None:
@@ -247,6 +241,8 @@ class TranscriptionWaveformLane(QWidget):
             return
         old_playhead = self.playhead_ms
         self._playhead_ms = normalized
+        if self.isHidden():
+            return
         key_width, view_start, _view_end, px_per_ms = (
             self._view_geometry()
         )
@@ -278,7 +274,8 @@ class TranscriptionWaveformLane(QWidget):
         self.update()
 
     def refresh(self) -> None:
-        self.update()
+        if not self.isHidden():
+            self.update()
 
     def _view_geometry(self) -> tuple[float, float, float, float]:
         key_width = max(0.0, _finite_float(getattr(self._canvas, "KEY_W", 0.0)))
@@ -375,7 +372,47 @@ class TranscriptionWaveformLane(QWidget):
                 max(item[2] for item in valid),
             )
 
-    def paintEvent(self, _event) -> None:
+    def _render_waveform_layer(
+        self,
+        view_start: float,
+        view_end: float,
+        px_per_ms: float,
+        waveform_rect: QRectF,
+    ) -> QPixmap:
+        width = waveform_rect.width()
+        height = waveform_rect.height()
+        device_ratio = self.devicePixelRatioF()
+        audio_origin = self._audio_to_project(0.0)
+        key = (view_start, px_per_ms, width, height, device_ratio, audio_origin)
+        if key == self._waveform_layer_key:
+            return self._waveform_layer
+
+        layer = QPixmap()
+        buckets = self._visible_waveform(view_start, view_end)
+        if buckets and width > 0.0:
+            layer = QPixmap(math.ceil(width * device_ratio), math.ceil(height * device_ratio))
+            layer.setDevicePixelRatio(device_ratio)
+            layer.fill(Qt.transparent)
+            center = height * 0.5
+            half = max(2.0, center - 8.0)
+            bars: list[QRectF] = []
+            for start, end, peak in self._iter_paint_buckets(buckets, width):
+                x = (start + audio_origin - view_start) * px_per_ms
+                bar_width = max(1.0, (end - start) * px_per_ms)
+                amplitude = peak * half
+                if amplitude > 0.0:
+                    bars.append(QRectF(x, center - amplitude, bar_width, amplitude * 2.0))
+            painter = QPainter(layer)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor("#c6a064"))
+            if bars:
+                painter.drawRects(bars)
+            painter.end()
+        self._waveform_layer_key = key
+        self._waveform_layer = layer
+        return layer
+
+    def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, False)
         key_width, view_start, view_end, px_per_ms = self._view_geometry()
@@ -388,10 +425,10 @@ class TranscriptionWaveformLane(QWidget):
             full.height(),
         )
 
-        painter.fillRect(full, QColor("#171817"))
-        painter.fillRect(header, QColor("#252320"))
-        painter.fillRect(QRectF(0.0, 0.0, 4.0, full.height()), QColor("#d39a42"))
-        painter.setPen(QPen(QColor("#4c463b"), 1))
+        painter.fillRect(full, QColor("#1a1a1b"))
+        painter.fillRect(header, QColor("#222224"))
+        painter.fillRect(QRectF(0.0, 0.0, full.width(), 1.0), QColor("#363638"))
+        painter.setPen(QPen(QColor("#363638"), 1))
         painter.drawLine(
             QPointF(key_width, 0.0),
             QPointF(key_width, full.height()),
@@ -405,7 +442,9 @@ class TranscriptionWaveformLane(QWidget):
         painter.drawText(
             QRectF(9.0, 7.0, max(0.0, key_width - 14.0), 20.0),
             Qt.AlignLeft | Qt.AlignVCenter,
-            tr("参考音频"),
+            painter.fontMetrics().elidedText(
+                tr("波形"), Qt.ElideRight, max(1, round(key_width - 14.0))
+            ),
         )
         controller = self._reference_audio
         audio_path = str(_value(controller, "audio_path", "") or "")
@@ -447,60 +486,19 @@ class TranscriptionWaveformLane(QWidget):
                 QPointF(end_x, full.height()),
             )
 
-        damage = _event.rect()
-        damage_left = max(
-            waveform_rect.left(),
-            float(damage.left()) - 1.0,
-        )
-        damage_right = min(
-            waveform_rect.right(),
-            float(damage.right()) + 1.0,
-        )
-        if damage_right <= damage_left:
-            visible = ()
-        else:
-            waveform_view_start = max(
-                view_start,
-                view_start
-                + (damage_left - key_width) / px_per_ms,
+        if event.rect().right() >= key_width:
+            waveform_layer = self._render_waveform_layer(
+                view_start, view_end, px_per_ms, waveform_rect
             )
-            waveform_view_end = min(
-                view_end,
-                view_start
-                + (damage_right - key_width) / px_per_ms,
-            )
-            visible = self._visible_waveform(
-                waveform_view_start,
-                waveform_view_end,
-            )
-        if visible:
-            center = waveform_rect.center().y()
-            half = max(2.0, waveform_rect.height() / 2.0 - 8.0)
-            bars: list[QRectF] = []
-            for audio_start, audio_end, peak in self._iter_paint_buckets(
-                visible,
-                waveform_rect.width(),
-            ):
-                project_start = self._audio_to_project(audio_start)
-                project_end = self._audio_to_project(audio_end)
-                if project_end < view_start or project_start > view_end:
-                    continue
-                x = key_width + (project_start - view_start) * px_per_ms
-                width = max(1.0, (project_end - project_start) * px_per_ms)
-                amplitude = max(1.0, peak * half)
-                bars.append(
-                    QRectF(x, center - amplitude, width, amplitude * 2.0)
-                )
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor("#d7a34c"))
-            if bars:
-                painter.drawRects(bars)
-        else:
+            if not waveform_layer.isNull():
+                painter.drawPixmap(waveform_rect.topLeft(), waveform_layer)
+        if not _value(controller, "waveform", ()):
             painter.setPen(QColor("#817665"))
             placeholder = (
                 tr("正在分析波形…")
                 if loading
-                else tr("载入 MP3/WAV 后显示波形")
+                else tr("暂无波形预览") if audio_path
+                else tr("未载入参考音频")
             )
             painter.drawText(waveform_rect, Qt.AlignCenter, placeholder)
 
@@ -1388,6 +1386,7 @@ class TranscriptionEditorPanel(QWidget):
         super().__init__(parent)
         self.setObjectName("TranscriptionEditorPanel")
         self._audio_loaded = False
+        self._audio_display_name = ""
         self._analysis_available = True
         self._analysis_unavailable_reason = ""
         self._analysis_busy = False
@@ -1444,7 +1443,7 @@ class TranscriptionEditorPanel(QWidget):
         self.audio_button = QPushButton(tr("载入音频"), self.analysis_bar)
         self.audio_button.setObjectName("TranscriptionAudioButton")
         self.audio_button.setAccessibleName(tr("载入或更换参考音频"))
-        _responsive_control_width(self.audio_button, 64, 104)
+        _responsive_control_width(self.audio_button, 64, 144)
         self.audio_button.clicked.connect(self._audio_button_clicked)
         analysis.addWidget(self.audio_button, 0, 1)
 
@@ -1455,7 +1454,7 @@ class TranscriptionEditorPanel(QWidget):
         self.remove_audio_button.setObjectName("TranscriptionRemoveAudioButton")
         self.remove_audio_button.setAccessibleName(tr("移除参考音频"))
         self.remove_audio_button.setToolTip(tr("移除参考音频"))
-        _responsive_control_width(self.remove_audio_button, 72, 104)
+        _responsive_control_width(self.remove_audio_button, 72, 144)
         self.remove_audio_button.clicked.connect(self.unload_audio_requested)
         self.remove_audio_button.hide()
 
@@ -1562,11 +1561,10 @@ class TranscriptionEditorPanel(QWidget):
         self.confidence_caption.setToolTip(
             tr("只调整低置信候选的透明度，不隐藏或禁用候选。")
         )
-        self.confidence_caption.setMaximumWidth(42)
         self.confidence_slider = QSlider(Qt.Horizontal, self.analysis_bar)
         self.confidence_slider.setRange(0, 100)
         self.confidence_slider.setValue(30)
-        self.confidence_slider.setFixedWidth(88)
+        self.confidence_slider.setMinimumWidth(112)
         self.confidence_slider.setAccessibleName(
             tr("低置信候选透明度")
         )
@@ -1579,6 +1577,7 @@ class TranscriptionEditorPanel(QWidget):
         self.confidence_caption.setBuddy(self.confidence_slider)
         self.confidence_label = QLabel("30%", self.analysis_bar)
         self.confidence_label.setFixedWidth(40)
+        self.confidence_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.candidate_layer_button = QToolButton(self.analysis_bar)
         self.candidate_layer_button.setObjectName(
@@ -1610,7 +1609,7 @@ class TranscriptionEditorPanel(QWidget):
         )
         self.candidate_opacity_slider.setRange(0, 100)
         self.candidate_opacity_slider.setValue(52)
-        self.candidate_opacity_slider.setFixedWidth(112)
+        self.candidate_opacity_slider.setMinimumWidth(112)
         self.candidate_opacity_slider.setAccessibleName(tr("候选音块透明度"))
         self.candidate_opacity_slider.setToolTip(
             tr("调整全部识别候选音块的透明度")
@@ -1619,7 +1618,8 @@ class TranscriptionEditorPanel(QWidget):
             self._candidate_opacity_slider_changed
         )
         self.candidate_opacity_label = QLabel("52%", self.analysis_bar)
-        self.candidate_opacity_label.setFixedWidth(38)
+        self.candidate_opacity_label.setFixedWidth(40)
+        self.candidate_opacity_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.melody_lines_button = QToolButton(self.analysis_bar)
         self.melody_lines_button.setObjectName(
@@ -1852,9 +1852,7 @@ class TranscriptionEditorPanel(QWidget):
         self.reference_opacity_popup = QWidget(
             self.reference_opacity_menu
         )
-        reference_opacity_layout = QHBoxLayout(
-            self.reference_opacity_popup
-        )
+        reference_opacity_layout = QGridLayout(self.reference_opacity_popup)
         reference_opacity_layout.setContentsMargins(8, 5, 8, 5)
         reference_opacity_layout.setSpacing(6)
         self.reference_opacity_caption = QLabel(
@@ -1864,7 +1862,6 @@ class TranscriptionEditorPanel(QWidget):
         self.reference_opacity_caption.setToolTip(
             tr("旋律线、Frame、Onset 与声谱透明度；音高线在其菜单内单独调整")
         )
-        _responsive_control_width(self.reference_opacity_caption, 36, 104)
         self.reference_opacity_slider = QSlider(
             Qt.Horizontal,
             self.reference_opacity_popup,
@@ -1874,7 +1871,7 @@ class TranscriptionEditorPanel(QWidget):
         )
         self.reference_opacity_slider.setRange(0, 100)
         self.reference_opacity_slider.setValue(60)
-        self.reference_opacity_slider.setFixedWidth(112)
+        self.reference_opacity_slider.setMinimumWidth(160)
         self.reference_opacity_slider.setToolTip(
             self.reference_opacity_caption.toolTip()
         )
@@ -1889,9 +1886,10 @@ class TranscriptionEditorPanel(QWidget):
             self.reference_opacity_popup,
         )
         self.reference_opacity_label.setFixedWidth(38)
-        reference_opacity_layout.addWidget(self.reference_opacity_caption)
-        reference_opacity_layout.addWidget(self.reference_opacity_slider)
-        reference_opacity_layout.addWidget(self.reference_opacity_label)
+        self.reference_opacity_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        reference_opacity_layout.addWidget(self.reference_opacity_caption, 0, 0)
+        reference_opacity_layout.addWidget(self.reference_opacity_label, 0, 1)
+        reference_opacity_layout.addWidget(self.reference_opacity_slider, 1, 0, 1, 2)
         reference_opacity_action = QWidgetAction(
             self.reference_opacity_menu
         )
@@ -2177,7 +2175,7 @@ class TranscriptionEditorPanel(QWidget):
         _responsive_control_width(
             self.rhythm_diagnostic_button,
             72,
-            112,
+            164,
         )
         self.rhythm_diagnostic_button.clicked.connect(
             self.rhythm_diagnostic_requested
@@ -3217,13 +3215,20 @@ class TranscriptionEditorPanel(QWidget):
         *,
         display_name: str = "",
     ) -> None:
-        self._audio_loaded = bool(loaded)
+        loaded = bool(loaded)
+        display_name = display_name if loaded else ""
+        if (loaded, display_name) == (self._audio_loaded, self._audio_display_name):
+            return
+        self._audio_loaded = loaded
+        self._audio_display_name = display_name
         self.audio_button.setText(
             tr("更换音频") if loaded else tr("载入音频")
         )
         self.audio_button.setProperty("i18nSkipToolTip", bool(loaded))
         self.audio_button.setToolTip(display_name if loaded else "")
         self.remove_audio_button.setVisible(self._audio_loaded)
+        if not self._analysis_busy:
+            self.status_label.setText(self._effective_idle_status())
         self._refresh_contextual_visibility()
         self._refresh_analysis_controls()
 
@@ -3571,6 +3576,8 @@ class TranscriptionEditorPanel(QWidget):
             and self._analysis_unavailable_reason
         ):
             return str(self._analysis_unavailable_reason)
+        if self._audio_loaded and self._idle_status == trv("载入音频，然后分析"):
+            return tr("尚未分析")
         return str(self._idle_status)
 
     def retranslate_dynamic_content(self) -> None:

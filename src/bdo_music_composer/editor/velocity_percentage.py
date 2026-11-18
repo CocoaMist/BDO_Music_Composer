@@ -376,14 +376,17 @@ def selection_velocity_percent(
 def track_velocity_percent(track: TrackState) -> int | None:
     clips = track_clips(track)
     values = {int(clip.velocity_percent) for clip in clips}
+    if len(values) != 1:
+        return None
+    value = next(iter(values))
+    if not track.notes or value == int(track.loose_velocity_percent):
+        return value
     owned = {
         index for indices in clip_authored_note_index_map(
             track, tuple(str(clip.clip_id) for clip in clips)
         ).values() for index in indices
     }
-    if len(owned) < len(track.notes):
-        values.add(int(track.loose_velocity_percent))
-    return next(iter(values)) if len(values) == 1 else None
+    return value if len(owned) == len(track.notes) else None
 
 
 __all__ = [

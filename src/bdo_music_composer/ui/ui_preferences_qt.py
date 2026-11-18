@@ -16,6 +16,9 @@ from bdo_music_composer.app.ui_preferences import (
 )
 
 
+_STARTUP_SCREEN_FRACTION = 0.88
+
+
 class _PreferenceBinding(QObject):
     def __init__(
         self,
@@ -69,7 +72,7 @@ class WorkspaceUiPreferenceBinding(_PreferenceBinding):
     def __init__(self, window, config, persist: Callable[[], None]) -> None:
         super().__init__(window, config, persist, ("workspace",))
         values = self.preferences["workspace"]
-        window.resize(values["window_width"], values["window_height"])
+        self._restore_normal_geometry(window, values["window_width"], values["window_height"])
         window.timeline_zoom.setValue(values["timeline_zoom_percent"])
         window.timeline_pan.setValue(values["timeline_pan_percent"])
         window.timeline_loop_box.setChecked(values["timeline_loop_enabled"])
@@ -81,14 +84,29 @@ class WorkspaceUiPreferenceBinding(_PreferenceBinding):
             lane_height=values["timeline_lane_height"],
             reference_lane_height=values["reference_lane_height"],
         )
-        if values["window_maximized"]:
-            QTimer.singleShot(0, window.showMaximized)
+        window.workbench.restore_layout(values)
+        window.workbench.splitter.splitterMoved.connect(self.schedule)
+        window.workbench.inspector_toggle.toggled.connect(self.schedule)
+        window.workbench.editor_toggle.toggled.connect(self.schedule)
         window.timeline_zoom.valueChanged.connect(self.schedule)
         window.timeline_pan.valueChanged.connect(self.schedule)
         window.timeline_loop_box.toggled.connect(self.schedule)
         window.reference_audio.volume_changed.connect(self.schedule)
         window.timeline.layout_preferences_changed.connect(self.schedule)
         window.installEventFilter(self)
+
+    @staticmethod
+    def _restore_normal_geometry(window, width: int, height: int) -> None:
+        screen = window.screen()
+        if screen is None:
+            window.resize(width, height)
+            return
+        available = screen.availableGeometry()
+        width = max(window.minimumWidth(), min(width, int(available.width() * _STARTUP_SCREEN_FRACTION)))
+        height = max(window.minimumHeight(), min(height, int(available.height() * _STARTUP_SCREEN_FRACTION)))
+        left = available.left() + max(0, (available.width() - width) // 2)
+        top = available.top() + max(0, (available.height() - height) // 2)
+        window.setGeometry(left, top, width, height)
 
     @property
     def timeline_zoom_percent(self) -> int:
@@ -105,10 +123,10 @@ class WorkspaceUiPreferenceBinding(_PreferenceBinding):
     def capture(self) -> None:
         window = self.owner
         values = self.preferences["workspace"]
-        if not window.isMaximized():
+        if not (window.isMaximized() or window.isFullScreen() or window.isMinimized()):
             values["window_width"] = window.width()
             values["window_height"] = window.height()
-        values["window_maximized"] = window.isMaximized()
+        values.update(window.workbench.layout_preferences())
         values["timeline_zoom_percent"] = window.timeline_zoom.value()
         values["timeline_pan_percent"] = window.timeline_pan.value()
         values["timeline_loop_enabled"] = window.timeline_loop_box.isChecked()
@@ -173,9 +191,6 @@ class EditorUiPreferenceBinding(_PreferenceBinding):
         ):
             signal.connect(self.schedule)
         for button in (
-            editor.note_mode_button,
-            editor.articulation_mode_button,
-            editor.grid_mode_button,
             editor.velocity_point_button,
             editor.velocity_brush_button,
         ):
@@ -202,7 +217,6 @@ class EditorUiPreferenceBinding(_PreferenceBinding):
         editor.snap_box.setChecked(values["snap_enabled"])
         editor.note_preview_box.setChecked(values["note_preview_enabled"])
         editor.draw_mode_button.setChecked(values["draw_mode_enabled"])
-        editor._set_top_inspector_mode(values["inspector_mode"])
         editor.loop_box.setChecked(values["loop_enabled"])
         editor.velocity_toggle.setChecked(values["velocity_visible"])
         editor.set_velocity_panel_height(values["velocity_panel_height"])
@@ -228,19 +242,18 @@ class EditorUiPreferenceBinding(_PreferenceBinding):
     def capture(self) -> None:
         editor = self.owner
         values = self.preferences["editor"]
+        if not editor.property("workbenchEmbedded"):
+            values.update(window_width=editor.width(), window_height=editor.height())
         values.update({
-            "window_width": editor.width(),
-            "window_height": editor.height(),
             "horizontal_zoom": editor.editor_zoom.value(),
             "note_row_height": round(float(editor.canvas.ROW_H), 3),
             "quantize_divisor": int(editor.quantize_combo.currentData() or 1),
             "snap_enabled": editor.snap_box.isChecked(),
             "note_preview_enabled": editor.note_preview_box.isChecked(),
             "draw_mode_enabled": editor.draw_mode_button.isChecked(),
-            "inspector_mode": self._inspector_mode(editor),
             "loop_enabled": editor.loop_box.isChecked(),
-            "velocity_visible": editor.velocity_toggle.isChecked(),
-            "velocity_panel_height": editor.velocity_panel_height(),
+            "velocity_visible": values["velocity_visible"] if editor.property("workbenchEmbedded") else editor.velocity_toggle.isChecked(),
+            "velocity_panel_height": values["velocity_panel_height"] if editor.property("workbenchEmbedded") else editor.velocity_panel_height(),
             "velocity_mode": editor.velocity_lane.edit_mode,
             "velocity_radius_beats": editor.velocity_lane.influence_beats,
             "velocity_scope": editor.velocity_lane.scope_mode,
@@ -253,12 +266,6 @@ class EditorUiPreferenceBinding(_PreferenceBinding):
             "rhythm_projection_enabled": panel.rhythm_projection_checkbox.isChecked(),
             "rhythm_profile": panel.rhythm_alignment_profile,
         })
-
-    @staticmethod
-    def _inspector_mode(editor) -> str:
-        if editor.articulation_mode_button.isChecked():
-            return "articulation"
-        return "grid" if editor.grid_mode_button.isChecked() else "note"
 
     def eventFilter(self, watched, event) -> bool:
         if watched is self.owner and event.type() == QEvent.Type.Resize:
